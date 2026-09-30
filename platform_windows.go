@@ -98,13 +98,25 @@ func closeChatGPT() error {
 	return nil
 }
 func launchChatGPT(target string) error {
+	var cmd *exec.Cmd
 	if strings.Contains(target, "!") {
-		return hiddenCommand("explorer.exe", "shell:AppsFolder\\"+target).Start()
+		cmd = hiddenCommand("explorer.exe", "shell:AppsFolder\\"+target)
+	} else if strings.HasSuffix(strings.ToLower(target), ".lnk") {
+		cmd = hiddenCommand("explorer.exe", target)
+	} else {
+		cmd = hiddenCommand(target)
 	}
-	if strings.HasSuffix(strings.ToLower(target), ".lnk") {
-		return hiddenCommand("explorer.exe", target).Start()
+	if err := cmd.Start(); err != nil {
+		return err
 	}
-	return hiddenCommand(target).Start()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if isChatGPTRunning() {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return errors.New("ChatGPT 启动超时，请手动打开应用")
 }
 func revealConfig(path string) error {
 	return hiddenCommand("explorer.exe", "/select,"+path).Start()

@@ -59,7 +59,20 @@ func resolveChatGPTTarget(configured string) (string, error) {
 }
 
 func isChatGPTRunning() bool {
-	return hiddenCommand("pgrep", "-x", "ChatGPT").Run() == nil
+	// `pgrep -x ChatGPT` does not reliably see the main process of the
+	// notarized ChatGPT app on recent macOS releases, even though `ps` does.
+	// Read the short executable name from `ps` instead; this also avoids
+	// matching ChatGPT helper processes or unrelated browser tabs.
+	out, err := hiddenCommand("ps", "-axo", "ucomm=").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == "ChatGPT" {
+			return true
+		}
+	}
+	return false
 }
 
 func closeChatGPT() error {
@@ -80,10 +93,23 @@ func closeChatGPT() error {
 }
 
 func launchChatGPT(target string) error {
+	var cmd *exec.Cmd
 	if strings.HasSuffix(target, ".app") || strings.Contains(target, string(filepath.Separator)) {
-		return hiddenCommand("open", target).Start()
+		cmd = hiddenCommand("open", target)
+	} else {
+		cmd = hiddenCommand("open", "-a", target)
 	}
-	return hiddenCommand("open", "-a", target).Start()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if isChatGPTRunning() {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return errors.New("ChatGPT 启动超时，请手动打开应用")
 }
 func revealConfig(path string) error {
 	return hiddenCommand("open", "-R", path).Start()

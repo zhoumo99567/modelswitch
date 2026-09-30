@@ -1,0 +1,7 @@
+:root { color-scheme: light; font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif; color: #172b4d; background: #f5f8fc; font-synthesis: none; text-rendering: optimizeLegibility; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 920px; background: #f5f8fc; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+::selection { color: #17345f; background: #cfe1ff; }

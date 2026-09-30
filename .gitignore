@@ -1,0 +1,37 @@
+# Dependencies and generated build output
+node_modules/
+/frontend/dist/
+/frontend/package.json.md5
+/build/bin/
+/release/
+*.exe
+*.app/
+*.app.zip
+*.syso
+*.test
+coverage.out
+
+# Local application data, credentials and backups (never distribute via Git)
+profiles.json
+backups/
+*.backup
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.codex/
+.skill-staging-*/
+.trash/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp

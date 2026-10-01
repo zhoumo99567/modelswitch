@@ -34,13 +34,16 @@ func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
 		Title:            "Model Switcher",
-		Width:            1120,
-		Height:           760,
-		MinWidth:         920,
-		MinHeight:        640,
+		Width:            defaultWindowWidth,
+		Height:           defaultWindowHeight,
+		MinWidth:         minWindowWidth,
+		MinHeight:        minWindowHeight,
 		AssetServer:      &assetserver.Options{Assets: assets},
 		BackgroundColour: &options.RGBA{R: 15, G: 23, B: 42, A: 1},
 		OnStartup:        app.startup,
+		StartHidden:      true,
+		OnDomReady:       app.restoreWindow,
+		OnBeforeClose:    app.beforeClose,
 		Bind:             []interface{}{app},
 	})
 	if err != nil {

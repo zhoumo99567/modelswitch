@@ -8,34 +8,92 @@ export function ActivateProfile(arg1:string):Promise<main.AppState>;
 
 export function CheckForUpdate():Promise<main.UpdateInfo>;
 
+export function ChooseCLIDirectory(arg1:string):Promise<string>;
+
 export function ChooseChatGPTPath():Promise<main.AppState>;
+
+export function ChooseWorkspaceDirectory(arg1:string):Promise<string>;
+
+export function CleanSkills(arg1:Array<string>):Promise<Array<main.SkillInfo>>;
+
+export function CreateMemory(arg1:string,arg2:string):Promise<main.MemoryEntry>;
+
+export function DeleteMemory(arg1:string):Promise<void>;
 
 export function DeleteProfile(arg1:string):Promise<main.AppState>;
 
 export function DeleteSkill(arg1:string):Promise<Array<main.SkillInfo>>;
 
+export function DeleteWorkspace(arg1:string):Promise<main.WorkspaceState>;
+
 export function FetchModels(arg1:main.ProfileInput):Promise<Array<main.Model>>;
 
 export function InstallSkill(arg1:string):Promise<Array<main.SkillInfo>>;
+
+export function InstallSkillTo(arg1:string,arg2:string):Promise<Array<main.SkillInfo>>;
+
+export function LaunchCLI(arg1:string,arg2:string):Promise<void>;
 
 export function ListSkillCatalog():Promise<Array<main.SkillCatalogItem>>;
 
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
+export function LoadAdvancedState():Promise<main.AdvancedState>;
+
+export function LoadAgentConfig():Promise<main.AgentConfigState>;
+
+export function LoadCLIState():Promise<main.CLIState>;
+
+export function LoadLocalSkillsState():Promise<main.SkillsState>;
+
+export function LoadSharedSkillsState():Promise<main.SkillsState>;
+
+export function LoadSkillMarketMetrics(arg1:string):Promise<main.SkillMarketMetrics>;
+
 export function LoadSkillsState():Promise<main.SkillsState>;
 
 export function LoadState():Promise<main.AppState>;
+
+export function LoadWorkspaceState():Promise<main.WorkspaceState>;
+
+export function OpenAdvancedDirectory(arg1:string):Promise<void>;
 
 export function OpenCodexDirectory():Promise<void>;
 
 export function OpenConfigFolder():Promise<void>;
 
+export function OpenSharedSkillsDirectory():Promise<void>;
+
+export function OpenWorkspaceDirectory():Promise<void>;
+
+export function ReadAgentDocument(arg1:string):Promise<string>;
+
 export function ReadConfigText():Promise<string>;
+
+export function ReadMemory(arg1:string):Promise<string>;
+
+export function ReadRuntimeDocument(arg1:string):Promise<string>;
+
+export function RestoreSkill(arg1:string):Promise<Array<main.SkillInfo>>;
 
 export function SaveProfile(arg1:main.ProfileInput):Promise<main.AppState>;
 
+export function SaveWorkspace(arg1:string,arg2:string,arg3:string):Promise<main.WorkspaceState>;
+
+export function SearchSkills(arg1:string,arg2:string):Promise<main.SkillsState>;
+
+export function SelectWorkspace(arg1:string):Promise<main.WorkspaceState>;
+
 export function SetChatGPTPath(arg1:string):Promise<main.AppState>;
+
+export function SetTarget(arg1:string):Promise<main.AppState>;
 
 export function StartUpdate():Promise<main.UpdateInfo>;
 
+export function WriteAgentDocument(arg1:string,arg2:string):Promise<void>;
+
 export function WriteConfigText(arg1:string):Promise<void>;
+
+export function WriteMemory(arg1:string,arg2:string):Promise<void>;
+
+export function WriteRuntimeDocument(arg1:string,arg2:string):Promise<void>;

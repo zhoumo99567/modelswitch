@@ -14,8 +14,28 @@ export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
 
+export function ChooseCLIDirectory(arg1) {
+  return window['go']['main']['App']['ChooseCLIDirectory'](arg1);
+}
+
 export function ChooseChatGPTPath() {
   return window['go']['main']['App']['ChooseChatGPTPath']();
+}
+
+export function ChooseWorkspaceDirectory(arg1) {
+  return window['go']['main']['App']['ChooseWorkspaceDirectory'](arg1);
+}
+
+export function CleanSkills(arg1) {
+  return window['go']['main']['App']['CleanSkills'](arg1);
+}
+
+export function CreateMemory(arg1, arg2) {
+  return window['go']['main']['App']['CreateMemory'](arg1, arg2);
+}
+
+export function DeleteMemory(arg1) {
+  return window['go']['main']['App']['DeleteMemory'](arg1);
 }
 
 export function DeleteProfile(arg1) {
@@ -26,12 +46,24 @@ export function DeleteSkill(arg1) {
   return window['go']['main']['App']['DeleteSkill'](arg1);
 }
 
+export function DeleteWorkspace(arg1) {
+  return window['go']['main']['App']['DeleteWorkspace'](arg1);
+}
+
 export function FetchModels(arg1) {
   return window['go']['main']['App']['FetchModels'](arg1);
 }
 
 export function InstallSkill(arg1) {
   return window['go']['main']['App']['InstallSkill'](arg1);
+}
+
+export function InstallSkillTo(arg1, arg2) {
+  return window['go']['main']['App']['InstallSkillTo'](arg1, arg2);
+}
+
+export function LaunchCLI(arg1, arg2) {
+  return window['go']['main']['App']['LaunchCLI'](arg1, arg2);
 }
 
 export function ListSkillCatalog() {
@@ -42,12 +74,44 @@ export function ListSkills() {
   return window['go']['main']['App']['ListSkills']();
 }
 
+export function LoadAdvancedState() {
+  return window['go']['main']['App']['LoadAdvancedState']();
+}
+
+export function LoadAgentConfig() {
+  return window['go']['main']['App']['LoadAgentConfig']();
+}
+
+export function LoadCLIState() {
+  return window['go']['main']['App']['LoadCLIState']();
+}
+
+export function LoadLocalSkillsState() {
+  return window['go']['main']['App']['LoadLocalSkillsState']();
+}
+
+export function LoadSharedSkillsState() {
+  return window['go']['main']['App']['LoadSharedSkillsState']();
+}
+
+export function LoadSkillMarketMetrics(arg1) {
+  return window['go']['main']['App']['LoadSkillMarketMetrics'](arg1);
+}
+
 export function LoadSkillsState() {
   return window['go']['main']['App']['LoadSkillsState']();
 }
 
 export function LoadState() {
   return window['go']['main']['App']['LoadState']();
+}
+
+export function LoadWorkspaceState() {
+  return window['go']['main']['App']['LoadWorkspaceState']();
+}
+
+export function OpenAdvancedDirectory(arg1) {
+  return window['go']['main']['App']['OpenAdvancedDirectory'](arg1);
 }
 
 export function OpenCodexDirectory() {
@@ -58,22 +122,74 @@ export function OpenConfigFolder() {
   return window['go']['main']['App']['OpenConfigFolder']();
 }
 
+export function OpenSharedSkillsDirectory() {
+  return window['go']['main']['App']['OpenSharedSkillsDirectory']();
+}
+
+export function OpenWorkspaceDirectory() {
+  return window['go']['main']['App']['OpenWorkspaceDirectory']();
+}
+
+export function ReadAgentDocument(arg1) {
+  return window['go']['main']['App']['ReadAgentDocument'](arg1);
+}
+
 export function ReadConfigText() {
   return window['go']['main']['App']['ReadConfigText']();
+}
+
+export function ReadMemory(arg1) {
+  return window['go']['main']['App']['ReadMemory'](arg1);
+}
+
+export function ReadRuntimeDocument(arg1) {
+  return window['go']['main']['App']['ReadRuntimeDocument'](arg1);
+}
+
+export function RestoreSkill(arg1) {
+  return window['go']['main']['App']['RestoreSkill'](arg1);
 }
 
 export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }
 
+export function SaveWorkspace(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveWorkspace'](arg1, arg2, arg3);
+}
+
+export function SearchSkills(arg1, arg2) {
+  return window['go']['main']['App']['SearchSkills'](arg1, arg2);
+}
+
+export function SelectWorkspace(arg1) {
+  return window['go']['main']['App']['SelectWorkspace'](arg1);
+}
+
 export function SetChatGPTPath(arg1) {
   return window['go']['main']['App']['SetChatGPTPath'](arg1);
+}
+
+export function SetTarget(arg1) {
+  return window['go']['main']['App']['SetTarget'](arg1);
 }
 
 export function StartUpdate() {
   return window['go']['main']['App']['StartUpdate']();
 }
 
+export function WriteAgentDocument(arg1, arg2) {
+  return window['go']['main']['App']['WriteAgentDocument'](arg1, arg2);
+}
+
 export function WriteConfigText(arg1) {
   return window['go']['main']['App']['WriteConfigText'](arg1);
+}
+
+export function WriteMemory(arg1, arg2) {
+  return window['go']['main']['App']['WriteMemory'](arg1, arg2);
+}
+
+export function WriteRuntimeDocument(arg1, arg2) {
+  return window['go']['main']['App']['WriteRuntimeDocument'](arg1, arg2);
 }

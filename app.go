@@ -21,12 +21,14 @@ import (
 )
 
 type App struct {
-	ctx context.Context
-	mu  sync.Mutex
+	ctx    context.Context
+	mu     sync.Mutex
+	window windowMemory
 }
 type Model struct {
-	ID      string `json:"id"`
-	OwnedBy string `json:"owned_by,omitempty"`
+	ID             string `json:"id"`
+	OwnedBy        string `json:"owned_by,omitempty"`
+	SupportsImages bool   `json:"supportsImages,omitempty"`
 }
 type ProfileInput struct {
 	ID            string  `json:"id"`
@@ -46,6 +48,7 @@ type ProfileView struct {
 	Models        []Model `json:"models"`
 }
 type AppState struct {
+	Target                string        `json:"target"`
 	Version               string        `json:"version"`
 	Profiles              []ProfileView `json:"profiles"`
 	ActiveProfileID       string        `json:"activeProfileId"`
@@ -67,9 +70,13 @@ type baseline struct {
 	Provider *string `json:"provider"`
 }
 type storeFile struct {
-	Profiles      []storedProfile `json:"profiles"`
-	Baseline      *baseline       `json:"baseline,omitempty"`
-	ChatGPTTarget string          `json:"chatGptTarget,omitempty"`
+	Profiles          []storedProfile `json:"profiles"`
+	Baseline          *baseline       `json:"baseline,omitempty"`
+	ChatGPTTarget     string          `json:"chatGptTarget,omitempty"`
+	Target            string          `json:"target,omitempty"`
+	PiBaseline        *piBaseline     `json:"piBaseline,omitempty"`
+	Workspaces        []Workspace     `json:"workspaces,omitempty"`
+	ActiveWorkspaceID string          `json:"activeWorkspaceId,omitempty"`
 }
 
 func NewApp() *App                         { return &App{} }
@@ -84,6 +91,9 @@ func (a *App) loadState() (AppState, error) {
 	if err != nil {
 		return AppState{}, err
 	}
+	if selectedTarget(store) == "pi" {
+		return a.loadPiState(store)
+	}
 	data, err := readConfig()
 	if err != nil {
 		return AppState{}, err
@@ -96,7 +106,7 @@ func (a *App) loadState() (AppState, error) {
 	if provider == "" {
 		provider = "openai"
 	}
-	result := AppState{Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: provider, ActiveModel: stringValue(config, "model"), ConfigPath: configPath(), ChatGPTRunning: isChatGPTRunning(), CanRestore: store.Baseline != nil, ChatGPTTarget: store.ChatGPTTarget}
+	result := AppState{Target: "chatgpt", Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: provider, ActiveModel: stringValue(config, "model"), ConfigPath: configPath(), ChatGPTRunning: isChatGPTRunning(), CanRestore: store.Baseline != nil, ChatGPTTarget: store.ChatGPTTarget}
 	result.ChatGPTResolvedTarget, err = resolveChatGPTTarget(store.ChatGPTTarget)
 	if err != nil {
 		result.ChatGPTTargetError = err.Error()
@@ -169,6 +179,13 @@ func (a *App) SaveProfile(input ProfileInput) (AppState, error) {
 func (a *App) DeleteProfile(id string) (AppState, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	store, err := readStore()
+	if err != nil {
+		return AppState{}, err
+	}
+	if store.PiBaseline != nil && store.PiBaseline.ProfileID == id {
+		return AppState{}, errors.New("请先恢复 pi agent 配置，再删除正在使用的配置")
+	}
 	data, err := readConfig()
 	if err != nil {
 		return AppState{}, err
@@ -179,10 +196,6 @@ func (a *App) DeleteProfile(id string) (AppState, error) {
 	}
 	if stringValue(conf, "model_provider") == providerID && configuredProfileID(conf) == id {
 		return AppState{}, errors.New("请先切回 OpenAI，再删除正在使用的配置")
-	}
-	store, err := readStore()
-	if err != nil {
-		return AppState{}, err
 	}
 	result := []storedProfile{}
 	for _, p := range store.Profiles {
@@ -293,6 +306,9 @@ func (a *App) ActivateProfile(id string) (AppState, error) {
 	if profile == nil || profile.SelectedModel == "" {
 		return AppState{}, errors.New("请先保存配置并选择模型")
 	}
+	if selectedTarget(store) == "pi" {
+		return a.activatePiProfile(store, *profile)
+	}
 	original, err := readConfig()
 	if err != nil {
 		return AppState{}, err
@@ -347,6 +363,9 @@ func (a *App) ActivateOpenAI() (AppState, error) {
 	store, err := readStore()
 	if err != nil {
 		return AppState{}, err
+	}
+	if selectedTarget(store) == "pi" {
+		return a.restorePiProfile(store)
 	}
 	if store.Baseline == nil {
 		return AppState{}, errors.New("尚未通过本工具切换，无需恢复")
@@ -430,14 +449,21 @@ func (a *App) ChooseChatGPTPath() (AppState, error) {
 }
 
 func (a *App) OpenConfigFolder() error {
-	return revealConfig(configPath())
+	return revealConfig(activeConfigPath())
 }
 func (a *App) OpenCodexDirectory() error {
-	return openCodexDirectory(filepath.Dir(configPath()))
+	return openCodexDirectory(filepath.Dir(activeConfigPath()))
 }
 func (a *App) ReadConfigText() (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if activeConfigPath() != configPath() {
+		data, err := os.ReadFile(activeConfigPath())
+		if errors.Is(err, os.ErrNotExist) {
+			return "{}", nil
+		}
+		return string(data), err
+	}
 	data, err := readConfig()
 	if err != nil {
 		return "", err
@@ -447,6 +473,9 @@ func (a *App) ReadConfigText() (string, error) {
 func (a *App) WriteConfigText(content string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if activeConfigPath() != configPath() {
+		return writePiConfigText(content)
+	}
 	if _, err := parseConfig([]byte(content)); err != nil {
 		return errors.New("config.toml 不是有效 TOML，未写入")
 	}

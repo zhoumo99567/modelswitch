@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,21 +94,35 @@ func closeChatGPT() error {
 }
 
 func launchChatGPT(target string) error {
-	var cmd *exec.Cmd
-	if strings.HasSuffix(target, ".app") || strings.Contains(target, string(filepath.Separator)) {
-		cmd = hiddenCommand("open", target)
-	} else {
-		cmd = hiddenCommand("open", "-a", target)
+	launcher := func() error {
+		var cmd *exec.Cmd
+		if strings.HasSuffix(target, ".app") || strings.Contains(target, string(filepath.Separator)) {
+			cmd = hiddenCommand("open", target)
+		} else {
+			cmd = hiddenCommand("open", "-a", target)
+		}
+		return cmd.Run()
 	}
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	// `open` returns before LaunchServices has really started the app and the
+	// request is dropped now and then, so keep asking until it shows up.
+	var runErr error
+	for attempt := 1; attempt <= 3; attempt++ {
 		if isChatGPTRunning() {
 			return nil
 		}
-		time.Sleep(250 * time.Millisecond)
+		if err := launcher(); err != nil {
+			runErr = err
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if isChatGPTRunning() {
+				return nil
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	if runErr != nil {
+		return fmt.Errorf("无法启动 ChatGPT：%w", runErr)
 	}
 	return errors.New("ChatGPT 启动超时，请手动打开应用")
 }

@@ -139,7 +139,7 @@ func localConfig(original []byte, profile storedProfile, helper string) ([]byte,
 		if helper == "" {
 			return nil, errors.New("缺少凭据助手")
 		}
-		section += fmt.Sprintf("\n[model_providers.%s.auth]\ncommand = %s\nargs = [\"--model-switcher-token\", %s]\ntimeout_ms = 5000\nrefresh_interval_ms = 0\n", providerID, strconv.Quote(helper), strconv.Quote(profile.ID))
+		section += fmt.Sprintf("\n[model_providers.%s.auth]\ncommand = %s\nargs = [\"--model-switcher-token\", %s]\ntimeout_ms = 15000\nrefresh_interval_ms = 0\n", providerID, strconv.Quote(helper), strconv.Quote(profile.ID))
 	}
 	result := []byte(content + section + managedEnd + "\n")
 	if _, err = parseConfig(result); err != nil {

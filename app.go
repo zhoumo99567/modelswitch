@@ -337,7 +337,7 @@ func (a *App) ActivateProfile(id string) (AppState, error) {
 		return AppState{}, err
 	}
 	if err = launchChatGPT(chatGPTTarget); err != nil {
-		return AppState{}, errors.New("配置已写入；自动启动失败，请手动打开 ChatGPT")
+		return AppState{}, fmt.Errorf("配置已写入；自动启动失败（%v），请手动打开 ChatGPT", err)
 	}
 	return a.loadState()
 }
@@ -374,7 +374,7 @@ func (a *App) ActivateOpenAI() (AppState, error) {
 		return AppState{}, err
 	}
 	if err = launchChatGPT(chatGPTTarget); err != nil {
-		return AppState{}, errors.New("已恢复 OpenAI 配置；请手动打开 ChatGPT")
+		return AppState{}, fmt.Errorf("已恢复 OpenAI 配置；自动启动失败（%v），请手动打开 ChatGPT", err)
 	}
 	return a.loadState()
 }

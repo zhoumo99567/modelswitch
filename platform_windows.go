@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,30 +92,87 @@ func isChatGPTRunning() bool {
 	return err == nil && bytes.Contains(bytes.ToLower(out), []byte("\"chatgpt.exe\""))
 }
 func closeChatGPT() error {
-	_, err := powershell("$ErrorActionPreference='SilentlyContinue'; $apps=@(Get-Process -Name ChatGPT); foreach($p in $apps){if($p.MainWindowHandle -ne 0){[void]$p.CloseMainWindow()}}; $until=(Get-Date).AddSeconds(5); do { $left=@(Get-Process -Name ChatGPT); if($left.Count -eq 0){exit 0}; Start-Sleep -Milliseconds 250 } while((Get-Date) -lt $until); $left=@(Get-Process -Name ChatGPT); foreach($p in $left){Stop-Process -Id $p.Id -Force}; Start-Sleep -Milliseconds 500; if(@(Get-Process -Name ChatGPT).Count -eq 0){exit 0}; exit 2")
-	if err != nil {
+	// The app asks this tool for its key, and force-killing the app orphans those
+	// helper processes: they were still seen an hour later. Stop them first.
+	const script = "$ErrorActionPreference='SilentlyContinue';" +
+		"$apps=@(Get-Process -Name ChatGPT); foreach($p in $apps){if($p.MainWindowHandle -ne 0){[void]$p.CloseMainWindow()}};" +
+		"$until=(Get-Date).AddSeconds(5); do { $left=@(Get-Process -Name ChatGPT); if($left.Count -eq 0){exit 0}; Start-Sleep -Milliseconds 250 } while((Get-Date) -lt $until);" +
+		"$all=@(Get-CimInstance Win32_Process);" +
+		"$helper=@($all | Where-Object { $_.Name -like 'ModelSwitcher*' -and $_.CommandLine -like '*--model-switcher-token*' });" +
+		"foreach($h in $helper){Stop-Process -Id $h.ProcessId -Force};" +
+		"foreach($p in @(Get-Process -Name ChatGPT)){Stop-Process -Id $p.Id -Force};" +
+		"Start-Sleep -Milliseconds 500; if(@(Get-Process -Name ChatGPT).Count -eq 0){exit 0}; exit 2"
+	if _, err := powershell(script); err != nil {
 		return errors.New("ChatGPT 无法退出。请手动结束 ChatGPT.exe 后再点击切换；配置尚未修改")
 	}
 	return nil
 }
+func storeChatGPTAppID() string {
+	const script = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;" +
+		"$p=Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object {$_.Name -like 'OpenAI.Codex*' -or $_.Name -like 'OpenAI.ChatGPT*'} | Select-Object -First 1;" +
+		"if($p){$a=Get-StartApps | Where-Object {$_.AppID -like ($p.PackageFamilyName+'!*')} | Select-Object -First 1; if($a){$a.AppID}}"
+	out, err := powershell(script)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(string(out), "\ufeff"))
+}
+
+func insideWindowsApps(target string) bool {
+	root := filepath.Join(os.Getenv("ProgramFiles"), "WindowsApps")
+	if !strings.EqualFold(filepath.Base(root), "WindowsApps") {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(target); err == nil {
+		target = resolved
+	}
+	return strings.HasPrefix(strings.ToLower(target), strings.ToLower(root)+string(filepath.Separator))
+}
+
 func launchChatGPT(target string) error {
-	var cmd *exec.Cmd
+	// Store builds have to be activated through their AUMID. Starting the packaged
+	// executable directly is not a supported activation and frequently does nothing,
+	// especially right after the previous instance was killed while switching.
+	appID := ""
 	if strings.Contains(target, "!") {
-		cmd = hiddenCommand("explorer.exe", "shell:AppsFolder\\"+target)
-	} else if strings.HasSuffix(strings.ToLower(target), ".lnk") {
-		cmd = hiddenCommand("explorer.exe", target)
-	} else {
-		cmd = hiddenCommand(target)
+		appID = target
+	} else if insideWindowsApps(target) {
+		appID = storeChatGPTAppID()
 	}
-	if err := cmd.Start(); err != nil {
-		return err
+	launch := func() error {
+		var cmd *exec.Cmd
+		switch {
+		case appID != "":
+			cmd = hiddenCommand("explorer.exe", "shell:AppsFolder\\"+appID)
+		case strings.HasSuffix(strings.ToLower(target), ".lnk"):
+			cmd = hiddenCommand("explorer.exe", target)
+		default:
+			cmd = exec.Command(target)
+		}
+		return cmd.Start()
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	// Activation is dropped occasionally, so keep issuing it while waiting.
+	var startErr error
+	for attempt := 1; attempt <= 3; attempt++ {
 		if isChatGPTRunning() {
 			return nil
 		}
-		time.Sleep(250 * time.Millisecond)
+		if err := launch(); err != nil {
+			startErr = err
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if isChatGPTRunning() {
+				return nil
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	if startErr != nil {
+		return fmt.Errorf("无法启动 ChatGPT：%w", startErr)
 	}
 	return errors.New("ChatGPT 启动超时，请手动打开应用")
 }

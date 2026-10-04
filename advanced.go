@@ -274,13 +274,33 @@ func loadMCPServers(docs []RuntimeDocument) ([]MCPServer, []string) {
 
 func (a *App) LoadAdvancedState() (AdvancedState, error) {
 	project, _ := selectedWorkspace()
+	target := selectedTargetMust()
 	docs := runtimeDocuments(project)
-	memories, err := listMemoryEntries(project)
-	if err != nil {
-		return AdvancedState{}, err
+	runtimeTarget := "codex"
+	if target == "pi" {
+		runtimeTarget = "pi"
+	}
+	filteredDocs := make([]RuntimeDocument, 0, len(docs))
+	for _, doc := range docs {
+		if doc.Target == runtimeTarget {
+			filteredDocs = append(filteredDocs, doc)
+		}
+	}
+	docs = filteredDocs
+	memories := []MemoryEntry{}
+	if target == "chatgpt" {
+		var err error
+		memories, err = listMemoryEntries(project)
+		if err != nil {
+			return AdvancedState{}, err
+		}
 	}
 	servers, diagnostics := loadMCPServers(docs)
-	return AdvancedState{Target: selectedTargetMust(), CodexHome: codexHome(), PiHome: piRoot(), MemoryRoot: filepath.Join(codexHome(), "memories"), Documents: docs, Memories: memories, MCPServers: servers, Diagnostics: diagnostics}, nil
+	memoryRoot := ""
+	if target == "chatgpt" {
+		memoryRoot = filepath.Join(codexHome(), "memories")
+	}
+	return AdvancedState{Target: target, CodexHome: codexHome(), PiHome: piRoot(), MemoryRoot: memoryRoot, Documents: docs, Memories: memories, MCPServers: servers, Diagnostics: diagnostics}, nil
 }
 
 func selectedTargetMust() string {

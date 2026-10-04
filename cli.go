@@ -93,7 +93,15 @@ func resolveCLI(id string) (string, error) {
 func (a *App) LoadCLIState() CLIState {
 	home, _ := os.UserHomeDir()
 	state := CLIState{Directory: home, Tools: []CLIInfo{}}
-	for _, id := range []string{"codex", "pi"} {
+	target := "chatgpt"
+	if store, err := readStore(); err == nil {
+		target = selectedTarget(store)
+	}
+	ids := []string{"codex"}
+	if target == "pi" {
+		ids = []string{"pi"}
+	}
+	for _, id := range ids {
 		name, _ := cliName(id)
 		path, err := resolveCLI(id)
 		info := CLIInfo{ID: id, Name: name, Command: id, Installed: err == nil, Path: path}

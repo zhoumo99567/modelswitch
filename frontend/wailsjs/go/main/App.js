@@ -178,6 +178,10 @@ export function StartUpdate() {
   return window['go']['main']['App']['StartUpdate']();
 }
 
+export function TestModel(arg1, arg2, arg3) {
+  return window['go']['main']['App']['TestModel'](arg1, arg2, arg3);
+}
+
 export function WriteAgentDocument(arg1, arg2) {
   return window['go']['main']['App']['WriteAgentDocument'](arg1, arg2);
 }

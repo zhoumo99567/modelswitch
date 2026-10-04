@@ -1,7 +1,7 @@
 import './style.css';
 import './app.css';
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime';
-import { LoadCLIState, LaunchCLI, ChooseCLIDirectory, LoadSkillMarketMetrics, ActivateOpenAI, ActivateProfile, ChooseChatGPTPath, DeleteProfile, FetchModels, LoadState, LoadLocalSkillsState, SearchSkills, CleanSkills, RestoreSkill, SetTarget, InstallSkill, InstallSkillTo, DeleteSkill, CheckForUpdate, StartUpdate, OpenCodexDirectory, ReadConfigText, SaveProfile, SetChatGPTPath, WriteConfigText, LoadWorkspaceState, ChooseWorkspaceDirectory, SaveWorkspace, SelectWorkspace, DeleteWorkspace, LoadAgentConfig, ReadAgentDocument, WriteAgentDocument, LoadSharedSkillsState, OpenWorkspaceDirectory, OpenSharedSkillsDirectory, LoadAdvancedState, ReadRuntimeDocument, WriteRuntimeDocument, ReadMemory, WriteMemory, CreateMemory, DeleteMemory, OpenAdvancedDirectory } from '../wailsjs/go/main/App';
+import { LoadCLIState, LaunchCLI, ChooseCLIDirectory, LoadSkillMarketMetrics, ActivateOpenAI, ActivateProfile, ChooseChatGPTPath, DeleteProfile, FetchModels, TestModel, LoadState, LoadLocalSkillsState, SearchSkills, CleanSkills, RestoreSkill, SetTarget, InstallSkill, InstallSkillTo, DeleteSkill, CheckForUpdate, StartUpdate, OpenCodexDirectory, ReadConfigText, SaveProfile, SetChatGPTPath, WriteConfigText, LoadWorkspaceState, ChooseWorkspaceDirectory, SaveWorkspace, SelectWorkspace, DeleteWorkspace, LoadAgentConfig, ReadAgentDocument, WriteAgentDocument, LoadSharedSkillsState, OpenWorkspaceDirectory, OpenSharedSkillsDirectory, LoadAdvancedState, ReadRuntimeDocument, WriteRuntimeDocument, ReadMemory, WriteMemory, CreateMemory, DeleteMemory, OpenAdvancedDirectory } from '../wailsjs/go/main/App';
 
 const paths = {
  route: '<circle cx="5" cy="7" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M7 7h3a4 4 0 0 1 4 4v4a4 4 0 0 0 3 4M10 7h1a4 4 0 0 0 4-2h2"/>',
@@ -35,6 +35,48 @@ const paths = {
 };
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
+const inlineMarkdown = (value) => value
+ .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+ .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+ .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+ .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+ .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+ .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+const markdownHTML = (value = '') => {
+ const lines = String(value).replace(/\r\n?/g, '\n').split('\n');
+ const output = [];
+ let paragraph = [];
+ let listType = '';
+ let code = null;
+ const closeParagraph = () => { if (paragraph.length) { output.push('<p>' + inlineMarkdown(paragraph.join('<br>')) + '</p>'); paragraph = []; } };
+ const closeList = () => { if (listType) { output.push('</' + listType + '>'); listType = ''; } };
+ for (const rawLine of lines) {
+  const line = esc(rawLine);
+  if (/^```/.test(line)) {
+   closeParagraph(); closeList();
+   if (code === null) { code = []; } else { output.push('<pre><code>' + code.join('\n') + '</code></pre>'); code = null; }
+   continue;
+  }
+  if (code !== null) { code.push(line); continue; }
+  if (!line.trim()) { closeParagraph(); closeList(); continue; }
+  const heading = line.match(/^(#{1,6})\s+(.+)$/);
+  if (heading) { closeParagraph(); closeList(); output.push('<h' + heading[1].length + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>'); continue; }
+  const unordered = line.match(/^[-*+]\s+(.+)$/);
+  const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+  if (unordered || ordered) {
+   closeParagraph();
+   const nextType = ordered ? 'ol' : 'ul';
+   if (listType !== nextType) { closeList(); output.push('<' + nextType + '>'); listType = nextType; }
+   output.push('<li>' + inlineMarkdown((unordered || ordered)[1]) + '</li>');
+   continue;
+  }
+  if (/^&gt;\s?/.test(line)) { closeParagraph(); closeList(); output.push('<blockquote>' + inlineMarkdown(line.replace(/^&gt;\s?/, '')) + '</blockquote>'); continue; }
+  closeList(); paragraph.push(line);
+ }
+ if (code !== null) output.push('<pre><code>' + code.join('\n') + '</code></pre>');
+ closeParagraph(); closeList();
+ return output.join('');
+};
 const emptyDraft = () => ({ id: '', name: '', baseUrl: '', apiKey: '', selectedModel: '', models: [], clearApiKey: false, hasApiKey: false });
 let state = { version: '0.1.0', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
 let draft = emptyDraft();
@@ -42,6 +84,10 @@ let busy = '';
 let restoreFocusID = '';
 let error = '';
 let message = '';
+let modelTestInput = '';
+let modelTestReply = '';
+let modelTestModel = '';
+let modelTestProtocol = '';
 let dirty = false;
 let loaded = false;
 let configPreview = null;
@@ -49,7 +95,7 @@ let configDirty = false;
 let settingsOpen = false;
 let skillsState = { root: '', skills: [], trash: [], catalog: [], markets: [], errors: [] };
 let skillQuery = '';
-let skillMarket = 'openai';
+let skillMarket = 'all';
 let selectedSkills = new Set();
 let showTrash = false;
 let page = 'models';
@@ -105,7 +151,7 @@ const zhToEn = {
  'Codex 配置': 'Codex config', 'OpenAI 云端': 'OpenAI Cloud', '模型切换': 'Model Switcher', '模型配置': 'Model Profiles',
  '一个地方，管理你的本地模型连接。': 'Manage local model connections in one place.', 'ChatGPT 运行中': 'ChatGPT running',
  'ChatGPT 未运行': 'ChatGPT not running', '服务连接': 'Service connection', '编辑配置': 'Edit profile', '新建配置': 'New profile',
- '配置名称': 'Profile name', 'API 地址': 'API address', '支持本机、局域网和远程 OpenAI 兼容服务。': 'Local, LAN, and remote OpenAI-compatible services are supported.',
+ '配置名称': 'Profile name', 'API 地址': 'API address', '支持本机、局域网和远程 OpenAI 兼容服务。': 'Local, LAN, and remote OpenAI-compatible services are supported.', '测试模型': 'Test model', '测试对话': 'Test conversation', '发送给当前模型': 'Send to current model', '发送测试': 'Send test', '正在发送…': 'Sending…', '模型回答': 'Model reply', '当前模型：': 'Current model: ', '输入一段话并点击“发送测试”，模型的完整回答会显示在这里。': 'Enter a message and click “Send test” to see the complete reply here.', '输入要发送给模型的内容，例如：你好，请介绍一下你自己。': 'Enter a message, for example: Hello, please introduce yourself.', '正在测试…': 'Testing…',
  '可选': 'optional', 'Key 已加密保存；留空保持原值': 'Key is encrypted; leave blank to keep it', '服务无需认证时可留空': 'Leave blank if the service needs no authentication',
  '移除已保存的 Key': 'Remove saved key', '保存': 'Save', '正在保存…': 'Saving…', '获取模型': 'Fetch models', '正在获取…': 'Fetching…',
  '选择模型': 'Choose model', '选择一个模型': 'Choose a model', '等待获取模型列表': 'Waiting for model list', '先连接你的本地服务': 'Connect your local service first',
@@ -165,7 +211,7 @@ function applyPreferences() {
 
 function profileFor(id) { return state.profiles.find((p) => p.id === id); }
 function currentProfile() { return profileFor(draft.id); }
-function edit(profile) { draft = profile ? { ...profile, apiKey: '', clearApiKey: false, models: profile.models || [] } : emptyDraft(); dirty = false; error = ''; message = ''; render(); }
+function edit(profile) { draft = profile ? { ...profile, apiKey: '', clearApiKey: false, models: profile.models || [] } : emptyDraft(); dirty = false; error = ''; message = ''; modelTestReply = ''; modelTestModel = ''; modelTestProtocol = ''; render(); }
 function currentIsLocal() { return state.activeProvider === 'model_switcher_local'; }
 function formatBytes(bytes) {
  if (!bytes) return '0 B';
@@ -201,7 +247,11 @@ let cliState = { tools: [], directory: '' };
 let cliDirectory = localStorage.getItem('model-switcher-cli-directory') || '';
 let selectedCLI = '';
 const defaultMarkets = [{id:'openai',name:'OpenAI Skills'}, {id:'anthropic',name:'Anthropic Skills'}, {id:'vercel',name:'Vercel Skills'}, {id:'openai-plugins',name:'OpenAI Plugins'}, {id:'pi-skills',name:'pi-skills'}];
-const currentMarkets = () => skillsState.markets.length ? skillsState.markets : defaultMarkets;
+const currentMarkets = () => {
+ const markets = skillsState.markets.length ? skillsState.markets : defaultMarkets;
+ if (skillMarket !== 'all' && !markets.some((market) => market.id === skillMarket)) skillMarket = markets[0]?.id || 'all';
+ return markets;
+};
 const selectedMarkets = () => currentMarkets().filter((m) => skillMarket === 'all' || m.id === skillMarket);
 const marketPending = () => marketProgress.some((m) => m.status === 'loading');
 const numberText = (n) => Number(n).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN');
@@ -221,7 +271,7 @@ function renderMarketRows() {
  const pages = Math.max(1,Math.ceil(items.length / skillPageSize)); skillPage = Math.min(skillPage,pages);
  const cards = items.slice((skillPage-1)*skillPageSize,skillPage*skillPageSize).map((item) => `<article class="skill-item catalog-item"><div class="skill-item-main"><div class="skill-item-title"><strong>${esc(item.name)}</strong><span class="skill-category">${esc(item.source)}</span>${item.hasScripts ? '<span class="skill-badge warning">包含脚本</span>' : ''}</div><p class="skill-description">${esc(item.description)}</p><div class="skill-stats"><span title="skills.sh 记录的安装次数，非全网下载数">${icon('download',14)}<span class="metric-copy"><span>安装量</span><strong>${item.installs == null ? item.metricsPending ? '获取中…' : '未提供' : numberText(item.installs)}</strong></span></span><span title="整个仓库的 Stars，不是单个技能的评分">${icon('star',14)}<span class="metric-copy"><span>仓库 Stars</span><strong>${item.stars == null ? item.metricsPending ? '获取中…' : '未提供' : numberText(item.stars)}</strong></span></span><span class="metric-copy rating-unavailable"><span>用户评分</span><strong>未提供</strong></span></div><div class="skill-evidence"><button class="text-button" data-skill-url="${esc('https://github.com/'+item.repository+'/issues')}">查看反馈</button>${item.statsURL ? `<button class="text-button" data-skill-url="${esc(item.statsURL)}">统计来源</button>` : ''}</div>${skillMetadataHTML(item)}</div><button class="button button-secondary skill-install" data-install-skill="${esc(item.id)}" data-install-target="${esc(skillInstallTarget)}" ${busy || item.installed || item.conflict ? 'disabled' : ''}>${icon(item.installed ? 'check' : 'download',14)}${item.installed ? '已安装' : item.conflict ? '同名已存在' : '安装'}</button></article>`).join('');
  const progress = marketProgress.length ? `<div class="market-progress" role="status" aria-live="polite"><div class="market-progress-heading"><strong>${marketPending() ? '正在加载市场' : '市场加载完成'}</strong><span>${marketProgress.filter((m)=>m.status!=='loading').length} / ${marketProgress.length}</span></div><div class="market-status-list">${marketProgress.map((m)=>`<span class="market-status ${m.status}">${icon(m.status==='loading'?'refresh':m.status==='error'?'close':'check',12)}${esc(m.name)}${m.status==='ready' ? ' · '+m.count : ''}${m.status==='error' ? ' · '+(language==='en'?'Failed':'失败') : ''}</span>`).join('')}</div></div>` : '';
- return `<form id="skill-search-form" class="skill-search"><label class="field"><span>技能市场</span><select id="skill-market" ${disabled}><option value="all" ${skillMarket==='all'?'selected':''}>全部市场</option>${currentMarkets().map((m)=>`<option value="${esc(m.id)}" ${skillMarket===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="field"><span>搜索技能</span><input id="skill-query" type="search" placeholder="名称、描述或作者" value="${esc(skillQuery)}" ${disabled}></label><button class="button button-secondary" type="submit" ${disabled}>${icon('search',15)}搜索</button></form>${progress}<p class="market-data-note">安装量来自 skills.sh；仓库 Stars 仅代表仓库热度。当前市场未提供用户评分。</p>${skillsState.errors.map((err)=>`<div class="skill-market-error" role="alert">${esc(err)}</div>`).join('')}<div class="skills-list-head"><strong>市场技能 <span>${items.length}</span></strong><div class="skill-list-actions"><label class="skill-sort"><span>安装到</span><select id="skill-install-target" ${disabled}><option value="active" ${skillInstallTarget==='active'?'selected':''}>当前应用</option><option value="shared" ${skillInstallTarget==='shared'?'selected':''}>共享技能</option></select></label><label class="skill-sort"><span>排序</span><select id="skill-sort" ${disabled}><option value="installs" ${skillSort==='installs'?'selected':''}>安装量优先</option><option value="stars" ${skillSort==='stars'?'selected':''}>仓库热度优先</option><option value="name" ${skillSort==='name'?'selected':''}>名称 A–Z</option><option value="source" ${skillSort==='source'?'selected':''}>按市场</option><option disabled>用户评分（未提供）</option></select></label></div></div><div class="skills-grid" aria-busy="${marketPending()}">${cards || `<div class="skill-empty">${marketPending() ? '正在读取技能市场…' : skillsState.errors.length ? '市场加载失败，请刷新重试。' : '没有匹配的技能，试试其他关键词或市场。'}</div>`}</div>${pages>1?`<nav class="skill-pagination" aria-label="技能分页"><button id="skill-prev" class="button button-secondary" ${skillPage===1 || busy?'disabled':''}>上一页</button><span>${skillPage} / ${pages}</span><button id="skill-next" class="button button-secondary" ${skillPage===pages || busy?'disabled':''}>下一页</button></nav>`:''}`;
+ return `<form id="skill-search-form" class="skill-search"><label class="field"><span>技能市场</span><select id="skill-market" ${disabled}><option value="all" ${skillMarket==='all'?'selected':''}>全部市场</option>${currentMarkets().map((m)=>`<option value="${esc(m.id)}" ${skillMarket===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label><label class="field"><span>搜索技能</span><input id="skill-query" type="search" placeholder="名称、描述或作者" value="${esc(skillQuery)}" ${disabled}></label><button class="button button-secondary" type="submit" ${disabled}>${icon('search',15)}搜索</button></form>${progress}<p class="market-data-note">默认加载全部支持的技能市场；共 ${items.length} 个技能，每页 ${skillPageSize} 个。安装量来自 skills.sh；仓库 Stars 仅代表仓库热度。当前市场未提供用户评分。</p>${skillsState.errors.map((err)=>`<div class="skill-market-error" role="alert">${esc(err)}</div>`).join('')}<div class="skills-list-head"><strong>市场技能 <span>${items.length}</span>${pages>1 ? ` <small>第 ${skillPage} / ${pages} 页</small>` : ''}</strong><div class="skill-list-actions"><label class="skill-sort"><span>安装到</span><select id="skill-install-target" ${disabled}><option value="active" ${skillInstallTarget==='active'?'selected':''}>当前应用</option><option value="shared" ${skillInstallTarget==='shared'?'selected':''}>共享技能</option></select></label><label class="skill-sort"><span>排序</span><select id="skill-sort" ${disabled}><option value="installs" ${skillSort==='installs'?'selected':''}>安装量优先</option><option value="stars" ${skillSort==='stars'?'selected':''}>仓库热度优先</option><option value="name" ${skillSort==='name'?'selected':''}>名称 A–Z</option><option value="source" ${skillSort==='source'?'selected':''}>按市场</option><option disabled>用户评分（未提供）</option></select></label></div></div><div class="skills-grid" aria-busy="${marketPending()}">${cards || `<div class="skill-empty">${marketPending() ? '正在读取技能市场…' : skillsState.errors.length ? '市场加载失败，请刷新重试。' : '没有匹配的技能，试试其他关键词或市场。'}</div>`}</div>${pages>1?`<nav class="skill-pagination" aria-label="技能分页"><button id="skill-prev" class="button button-secondary" ${skillPage===1 || busy?'disabled':''}>上一页</button><span>${skillPage} / ${pages}</span><button id="skill-next" class="button button-secondary" ${skillPage===pages || busy?'disabled':''}>下一页</button></nav>`:''}`;
 }
 function assembleMarketCatalog() {
  skillsState.catalog = selectedMarkets().flatMap((m)=>marketCatalogs.get(m.id)?.catalog || []);
@@ -260,7 +310,7 @@ async function refreshSkills() {
 }
 async function refreshCLI() {
  cliState=await LoadCLIState(); if(!cliDirectory)cliDirectory=cliState.directory;
- if(!selectedCLI)selectedCLI=isPi()?'pi':'codex';
+ selectedCLI=isPi()?'pi':'codex';
 }
 async function refreshWorkspace() {
  workspaceState = await LoadWorkspaceState();
@@ -284,17 +334,20 @@ function renderAdvancedPage(disabled) {
  const docs = advancedState.documents || [];
  const memoryRows = (advancedState.memories || []).map((memory) => `<li class="advanced-list-row"><button class="advanced-list-main" data-memory-read="${esc(memory.path)}" ${disabled}><span class="advanced-list-icon">${icon('brain', 16)}</span><span><strong>${esc(memory.name)}</strong><small>${esc(memory.scope)} · ${esc(memory.path)} · ${memory.bytes} B</small></span></button><button class="icon-button" data-memory-delete="${esc(memory.path)}" aria-label="删除记忆 ${esc(memory.name)}" ${disabled}>${icon('trash', 14)}</button></li>`).join('');
  const serverRows = (advancedState.mcpServers || []).map((server) => `<li class="advanced-list-row"><span class="advanced-list-icon">${icon('plug', 16)}</span><span><strong>${esc(server.name)}</strong><small>${esc(server.target)} · ${esc(server.scope)} · ${esc(server.path)}</small></span><span class="advanced-server-detail">${server.command ? '命令：' + esc(server.command) : server.endpoint ? '端点：' + esc(server.endpoint) : '配置已发现'}${server.enabled === false ? ' · 已禁用' : ''}</span></li>`).join('');
- const docRows = docs.map((doc) => `<li class="advanced-list-row"><button class="advanced-list-main" data-advanced-doc="${esc(doc.path)}" ${disabled}><span class="advanced-list-icon">${icon(doc.kind.toLowerCase().includes('mcp') ? 'plug' : 'file', 16)}</span><span><strong>${esc(doc.kind)}</strong><small>${doc.exists ? '已创建' : '未创建'} · ${esc(doc.path)}</small></span></button><span class="skill-badge ${doc.exists ? '' : 'muted'}">${doc.exists ? '已创建' : '未创建'}</span></li>`).join('');
+ const docRows = docs.map((doc) => `<li class="advanced-list-row advanced-doc-row"><button class="advanced-list-main" data-advanced-doc="${esc(doc.path)}" ${disabled}><span class="advanced-list-icon">${icon(doc.kind.toLowerCase().includes('mcp') ? 'plug' : 'file', 16)}</span><span><strong>${esc(doc.kind)}</strong><small title="${esc(doc.path)}">${esc(doc.path)}</small></span></button><span class="skill-badge ${doc.exists ? '' : 'muted'}">${doc.exists ? '已创建' : '未创建'}</span></li>`).join('');
  const tab = (id, label, iconName) => `<button class="advanced-tab ${advancedSection === id ? 'active' : ''}" data-advanced-section="${id}" ${disabled}>${icon(iconName, 16)}${label}</button>`;
  let content = '';
- if (advancedSection === 'memory') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('brain', 18)}<h3>记忆文件</h3></div><span class="muted-label">${(advancedState.memories || []).length} 个</span></div><p class="workspace-note">管理 Codex 的持久化 Markdown 记忆。编辑和删除都会保留本地备份；pi agent 没有同一套内置记忆目录，适合通过 AGENTS.md 或扩展共享上下文。</p><div class="advanced-toolbar"><code>${esc(advancedState.memoryRoot || '正在读取…')}</code><button id="advanced-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button><button id="advanced-memory-new" class="button button-primary" ${disabled}>${icon('plus', 15)}新建记忆</button></div><ul class="advanced-list">${memoryRows || '<li class="workspace-empty">没有记忆文件。</li>'}</ul></section><section class="panel"><div class="panel-heading"><div>${icon('shield', 18)}<h3>使用说明</h3></div></div><div class="advanced-note-list"><p>记忆内容会作为后续代理上下文的一部分，请避免保存 API Key、密码或访问令牌。</p><p>项目级记忆位于当前工作区的 <code>.codex/memories</code>，全局记忆位于 Codex home 下。</p><p>备份位置：程序数据目录的 <code>backups/memories</code>。</p></div></section></div>`;
- if (advancedSection === 'mcp') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('plug', 18)}<h3>MCP 服务器</h3></div><span class="muted-label">${(advancedState.mcpServers || []).length} 个</span></div><p class="workspace-note">Codex 从 <code>config.toml</code> 的 <code>[mcp_servers.*]</code> 读取配置；pi agent 使用兼容版本支持的 <code>mcp.json</code>。这里先展示来源和启用状态，完整配置通过编辑器修改。</p><ul class="advanced-list">${serverRows || '<li class="workspace-empty">没有检测到 MCP 服务器。</li>'}</ul></section><section class="panel"><div class="panel-heading"><div>${icon('file', 18)}<h3>配置文件</h3></div></div><ul class="advanced-list">${docRows || '<li class="workspace-empty">没有配置文件。</li>'}</ul><div class="advanced-toolbar"><button id="advanced-codex-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 Codex 目录</button><button id="advanced-pi-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 pi 目录</button></div></section></div>`;
+ if (advancedSection === 'memory' && isPi()) content = `<section class="panel"><div class="panel-heading"><div>${icon('brain', 18)}<h3>记忆文件</h3></div><span class="skill-badge">pi agent</span></div><p class="workspace-note">pi agent 当前没有独立的内置记忆目录。请使用当前工作区的 AGENTS.md 或项目指令文件保存代理上下文。</p><div class="workspace-empty workspace-empty-large">没有可管理的 pi 记忆文件。</div></section>`;
+ else if (advancedSection === 'memory') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('brain', 18)}<h3>记忆文件</h3></div><span class="muted-label">${(advancedState.memories || []).length} 个</span></div><p class="workspace-note">管理 Codex 的持久化 Markdown 记忆。编辑和删除都会保留本地备份。</p><div class="advanced-toolbar"><code>${esc(advancedState.memoryRoot || '正在读取…')}</code><button id="advanced-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button><button id="advanced-memory-new" class="button button-primary" ${disabled}>${icon('plus', 15)}新建记忆</button></div><ul class="advanced-list">${memoryRows || '<li class="workspace-empty">没有记忆文件。</li>'}</ul></section><section class="panel"><div class="panel-heading"><div>${icon('shield', 18)}<h3>使用说明</h3></div></div><div class="advanced-note-list"><p>记忆内容会作为后续代理上下文的一部分，请避免保存 API Key、密码或访问令牌。</p><p>项目级记忆位于当前工作区的 <code>.codex/memories</code>，全局记忆位于 Codex home 下。</p><p>备份位置：程序数据目录的 <code>backups/memories</code>。</p></div></section></div>`;
+ if (advancedSection === 'mcp') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('plug', 18)}<h3>MCP 服务器</h3></div><span class="muted-label">${(advancedState.mcpServers || []).length} 个</span></div><p class="workspace-note">${isPi() ? 'pi agent 从 <code>mcp.json</code> 读取 MCP 配置。' : 'Codex 从 <code>config.toml</code> 和 <code>mcp.json</code> 读取 MCP 配置。'}这里先展示来源和启用状态，完整配置通过编辑器修改。</p><ul class="advanced-list">${serverRows || '<li class="workspace-empty">没有检测到 MCP 服务器。</li>'}</ul></section><section class="panel"><div class="panel-heading"><div>${icon('file', 18)}<h3>配置文件</h3></div></div><ul class="advanced-list">${docRows || '<li class="workspace-empty">没有配置文件。</li>'}</ul><div class="advanced-toolbar">${isPi() ? `<button id="advanced-pi-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 pi 目录</button>` : `<button id="advanced-codex-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 Codex 目录</button>`}</div></section></div>`;
  if (advancedSection === 'settings') content = `<section class="panel"><div class="panel-heading"><div>${icon('sliders', 18)}<h3>运行参数</h3></div><span class="skill-badge">${isPi() ? 'pi agent' : 'ChatGPT / Codex'}</span></div><p class="workspace-note">${isPi() ? 'pi settings 支持启动模型、思考级别、压缩、重试、图像、代理和终端显示设置。' : 'Codex 高级参数保存在 config.toml 中，可直接编辑并自动备份。'}</p><div class="advanced-settings-cards"><div class="advanced-setting-card"><strong>${isPi() ? 'pi settings.json' : 'Codex config.toml'}</strong><small>${esc(isPi() ? advancedState.piHome + '/settings.json' : advancedState.codexHome + '/config.toml')}</small><button class="button button-primary" data-advanced-doc="${esc(isPi() ? advancedState.piHome + '/settings.json' : advancedState.codexHome + '/config.toml')}" ${disabled}>${icon('edit', 15)}编辑运行参数</button></div><div class="advanced-setting-card"><strong>${isPi() ? '可调参数' : '建议参数'}</strong><small>${isPi() ? 'defaultThinkingLevel、thinkingBudgets、compaction、retry、terminal、images、httpProxy' : 'model_reasoning_effort、service_tier、request_max_retries、stream_idle_timeout_ms'}</small></div></div><div class="advanced-doc-heading"><strong>其他配置文件</strong><span class="muted-label">自动备份后写入</span></div><ul class="advanced-list">${docRows || '<li class="workspace-empty">没有配置文件。</li>'}</ul></section>`;
  const diagnostics = (advancedState.diagnostics || []).map((item) => `<li>${esc(item)}</li>`).join('');
  return `<section class="advanced-page"><div class="advanced-hero"><div><span class="eyebrow">代理工作台</span><h2>记忆、MCP 与运行参数</h2><p>把 Codex 和 pi agent 的高级配置放在同一处查看、备份和编辑。</p></div><div class="advanced-hero-actions"><button id="advanced-refresh" class="button button-secondary" ${disabled}>${icon('refresh', 15)}刷新</button></div></div><nav class="advanced-tabs" aria-label="高级设置">${tab('memory', '记忆管理', 'brain')}${tab('mcp', 'MCP 配置', 'plug')}${tab('settings', '运行参数', 'sliders')}</nav>${content}${diagnostics ? `<section class="panel advanced-diagnostics"><div class="panel-heading"><div>${icon('shield', 17)}<h3>诊断</h3></div></div><ul>${diagnostics}</ul></section>` : ''}</section>`;
 }
 function renderCLIPage(disabled) {
- return `<section class="cli-page"><div class="skills-page-heading"><div><h2>启动 CLI</h2><p>在系统终端中打开 Codex 或 pi agent。</p></div><button id="cli-refresh" class="button button-secondary" ${disabled}>${icon('refresh',16)}重新检测</button></div><section class="panel cli-workspace"><label class="field"><span>工作目录</span><input id="cli-directory" value="${esc(cliDirectory)}" placeholder="选择项目所在文件夹" ${disabled}><small>CLI 会在这个目录中启动。</small></label><button id="cli-choose-directory" class="button button-secondary" ${disabled}>${icon('folder',16)}选择目录</button></section><div class="cli-grid">${cliState.tools.map((tool)=>`<article id="cli-card-${tool.id}" class="panel cli-card ${selectedCLI===tool.id?'selected':''}"><div class="cli-card-heading"><span class="cli-icon">${icon('terminal',23)}</span><div><h3>${esc(tool.name)}</h3><span class="cli-detected ${tool.installed?'found':''}">${tool.installed?'已检测到':'未安装或未找到'}</span></div>${(isPi()?'pi':'codex')===tool.id?'<span class="skill-badge">当前应用</span>':''}</div><code>${esc(tool.path || tool.command)}</code>${tool.error?`<p class="cli-error">${esc(tool.error)}</p>`:''}<button class="button button-primary" data-launch-cli="${esc(tool.id)}" ${busy||!tool.installed?'disabled':''}>${icon('play',15)}${language==='en'?'Launch ':'启动 '}${esc(tool.name)}</button></article>`).join('') || '<div class="skill-empty">正在检测 CLI…</div>'}</div></section>`;
+ const currentCLI = isPi() ? 'pi' : 'codex';
+ const tools = cliState.tools.filter((tool) => tool.id === currentCLI);
+ return `<section class="cli-page"><div class="skills-page-heading"><div><h2>启动 CLI</h2><p>在系统终端中打开 ${isPi() ? 'pi agent' : 'Codex'}。</p></div><button id="cli-refresh" class="button button-secondary" ${disabled}>${icon('refresh',16)}重新检测</button></div><section class="panel cli-workspace"><label class="field"><span>工作目录</span><input id="cli-directory" value="${esc(cliDirectory)}" placeholder="选择项目所在文件夹" ${disabled}><small>CLI 会在这个目录中启动。</small></label><button id="cli-choose-directory" class="button button-secondary" ${disabled}>${icon('folder',16)}选择目录</button></section><div class="cli-grid">${tools.map((tool)=>`<article id="cli-card-${tool.id}" class="panel cli-card ${selectedCLI===tool.id?'selected':''}"><div class="cli-card-heading"><span class="cli-icon">${icon('terminal',23)}</span><div><h3>${esc(tool.name)}</h3><span class="cli-detected ${tool.installed?'found':''}">${tool.installed?'已检测到':'未安装或未找到'}</span></div><span class="skill-badge">当前应用</span></div><code>${esc(tool.path || tool.command)}</code>${tool.error?`<p class="cli-error">${esc(tool.error)}</p>`:''}<button class="button button-primary" data-launch-cli="${esc(tool.id)}" ${busy||!tool.installed?'disabled':''}>${icon('play',15)}${language==='en'?'Launch ':'启动 '}${esc(tool.name)}</button></article>`).join('') || '<div class="skill-empty">正在检测 CLI…</div>'}</div></section>`;
 }
 async function navigatePage(next, section = skillSection) {
  if (busy) return;
@@ -353,7 +406,7 @@ function renderSidebar(disabled, title) {
  <li><div class="nav-group-heading ${modelActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-models" data-toggle-section="models" aria-label="展开或折叠模型设置" aria-expanded="${treeExpanded.models}" aria-controls="model-nav">${icon(treeExpanded.models ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="models" ${disabled}>${icon('server', 18)}<span>模型设置</span><span class="nav-count">${state.profiles.length}</span></button></div>
  <ul class="nav-children" id="model-nav" ${treeExpanded.models ? '' : 'hidden'}>${profiles}<li><button class="nav-child nav-add ${modelActive && !draft.id ? 'selected' : ''}" id="new" ${disabled}>${icon('plus', 16)}<span>添加本地配置</span></button></li></ul></li>
  <li><div class="nav-group-heading ${skillActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-skills" data-toggle-section="skills" aria-label="展开或折叠技能管理" aria-expanded="${treeExpanded.skills}" aria-controls="skill-nav">${icon(treeExpanded.skills ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="skills" ${disabled}>${icon('spark', 18)}<span>技能管理</span></button></div>
- <ul class="nav-children" id="skill-nav" ${treeExpanded.skills ? '' : 'hidden'}>${sections.map(([id, symbol, label]) => `<li><button class="nav-child ${skillActive && skillSection === id ? 'selected' : ''}" data-skill-section="${id}" ${skillActive && skillSection === id ? 'aria-current="page"' : ''} ${disabled}>${icon(symbol, 16)}<span>${label}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${page==='cli'?'active':''}"><button class="nav-disclosure" id="toggle-cli" data-toggle-section="cli" aria-label="展开或折叠 CLI 启动器" aria-expanded="${treeExpanded.cli}" aria-controls="cli-nav">${icon(treeExpanded.cli?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="cli" ${disabled}>${icon('terminal',18)}<span>CLI 启动器</span></button></div><ul class="nav-children" id="cli-nav" ${treeExpanded.cli?'':'hidden'}>${[['codex','Codex CLI'],['pi','pi CLI']].map(([id,name])=>`<li><button id="nav-cli-${id}" class="nav-child ${page==='cli'&&selectedCLI===id?'selected':''}" data-cli-nav="${id}" ${disabled}>${icon('terminal',16)}<span>${name}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${advancedActive?'active':''}"><button class="nav-disclosure" id="toggle-advanced" data-toggle-section="advanced" aria-label="展开或折叠高级设置" aria-expanded="${treeExpanded.advanced}" aria-controls="advanced-nav">${icon(treeExpanded.advanced?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="advanced" ${disabled}>${icon('sliders',18)}<span>高级设置</span></button></div><ul class="nav-children" id="advanced-nav" ${treeExpanded.advanced?'':'hidden'}>${[['memory','brain','记忆管理'],['mcp','plug','MCP 配置'],['settings','sliders','运行参数']].map(([id,symbol,label])=>`<li><button class="nav-child ${advancedActive && advancedSection === id ? 'selected' : ''}" data-advanced-section="${id}" ${disabled}>${icon(symbol,16)}<span>${label}</span></button></li>`).join('')}</ul></li></ul></nav>
+ <ul class="nav-children" id="skill-nav" ${treeExpanded.skills ? '' : 'hidden'}>${sections.map(([id, symbol, label]) => `<li><button class="nav-child ${skillActive && skillSection === id ? 'selected' : ''}" data-skill-section="${id}" ${skillActive && skillSection === id ? 'aria-current="page"' : ''} ${disabled}>${icon(symbol, 16)}<span>${label}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${page==='cli'?'active':''}"><button class="nav-disclosure" id="toggle-cli" data-toggle-section="cli" aria-label="展开或折叠 CLI 启动器" aria-expanded="${treeExpanded.cli}" aria-controls="cli-nav">${icon(treeExpanded.cli?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="cli" ${disabled}>${icon('terminal',18)}<span>CLI 启动器</span></button></div><ul class="nav-children" id="cli-nav" ${treeExpanded.cli?'':'hidden'}>${[[isPi() ? 'pi' : 'codex', isPi() ? 'pi CLI' : 'Codex CLI']].map(([id,name])=>`<li><button id="nav-cli-${id}" class="nav-child ${page==='cli'&&selectedCLI===id?'selected':''}" data-cli-nav="${id}" ${disabled}>${icon('terminal',16)}<span>${name}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${advancedActive?'active':''}"><button class="nav-disclosure" id="toggle-advanced" data-toggle-section="advanced" aria-label="展开或折叠高级设置" aria-expanded="${treeExpanded.advanced}" aria-controls="advanced-nav">${icon(treeExpanded.advanced?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="advanced" ${disabled}>${icon('sliders',18)}<span>高级设置</span></button></div><ul class="nav-children" id="advanced-nav" ${treeExpanded.advanced?'':'hidden'}>${[['memory','brain','记忆管理'],['mcp','plug','MCP 配置'],['settings','sliders','运行参数']].map(([id,symbol,label])=>`<li><button class="nav-child ${advancedActive && advancedSection === id ? 'selected' : ''}" data-advanced-section="${id}" ${disabled}>${icon(symbol,16)}<span>${label}</span></button></li>`).join('')}</ul></li></ul></nav>
  <div class="sidebar-bottom"><button class="connection-card" id="settings" ${disabled} aria-label="打开设置" title="打开设置"><span class="connection-icon">${icon(currentIsLocal() ? 'server' : 'cloud', 19)}</span><span class="connection-copy"><span class="connection-target">${isPi() ? 'pi agent' : 'ChatGPT / Codex'}</span><strong>${esc(title)}</strong><small>${esc(state.activeModel || '使用默认模型')}</small></span>${icon('settings', 17)}</button><div class="sidebar-foot"><span class="status-label"><span class="status-dot"></span>${isPi() ? 'pi agent 配置' : state.chatGptRunning ? 'ChatGPT 运行中' : 'ChatGPT 未运行'}</span><span>v${esc(state.version)}</span></div></div></aside>
  <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整菜单栏宽度" aria-controls="sidebar" tabindex="0" title="拖动调整宽度；方向键微调，双击恢复默认"><span></span></div>`;
 }
@@ -371,6 +424,7 @@ function renderModelPage(disabled, title) {
  <section class="panel model-panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>选择模型</h3></div><span class="muted-label">${draft.models.length} 个可用</span></div><label class="field"><span>使用的模型</span><select id="model" ${disabled}${draft.models.length ? '' : ' disabled'}><option value="">${draft.models.length ? '选择一个模型' : '等待获取模型列表'}</option>${draft.models.map((m) => `<option value="${esc(m.id)}" ${m.id === draft.selectedModel ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}</select></label>
  ${isPi() ? `<div class="model-capability"><label><input id="model-images" type="checkbox" ${selected?.supportsImages ? 'checked' : ''} ${disabled}${draft.selectedModel ? '' : ' disabled'}>支持图像输入</label><small>仅在模型和 API 支持图像时启用。</small></div>` : ''}<div class="model-list">${rows}</div><p class="model-hint">${isPi() ? 'pi agent 使用 <strong>/v1/chat/completions</strong>' : '接入 Codex 需要兼容 <strong>/v1/responses</strong>'}</p></section></div>
  ${isPi() ? `<section class="connection-details"><strong>配置位置</strong><code>${esc(state.configPath)}</code><small>切换后在 pi 中使用 /model 选择模型；新会话使用已保存的默认模型。技能安装后使用 /reload。</small></section>` : `<section class="connection-details"><div class="path-heading"><label id="chatgpt-path-label">ChatGPT 路径</label><span class="muted-label">${state.chatGptTarget ? '手动选择' : '自动查找'}</span><button class="text-button" id="auto-target" ${disabled}>${icon('search', 15)}自动查找</button></div><button id="chatgpt-target" class="target-picker" aria-labelledby="chatgpt-path-label" ${disabled}>${icon('folder', 17)}<span>${esc(state.chatGptResolvedTarget || state.chatGptTarget || '未找到 ChatGPT，点击选择应用')}</span></button>${state.chatGptTargetError ? `<small class="is-error">${esc(state.chatGptTargetError)}</small>` : ''}</section>`}
+ <section class="panel model-test-panel"><div class="panel-heading"><div>${icon('terminal', 18)}<h3>测试对话</h3></div><span class="muted-label">${isPi() ? '/v1/chat/completions' : '/v1/responses'}</span></div><label class="field"><span>发送给当前模型</span><textarea id="model-test-input" class="model-test-input" rows="3" maxlength="4000" placeholder="输入要发送给模型的内容，例如：你好，请介绍一下你自己。" ${disabled}>${esc(modelTestInput)}</textarea></label><div class="model-test-actions"><span class="model-test-hint">当前模型：${esc(draft.selectedModel || '请先选择模型')}</span><button class="button button-primary" id="test-model" ${disabled}${draft.selectedModel ? '' : ' disabled'}>${icon('play', 16)}${busy === 'test-model' ? '正在发送…' : '发送测试'}</button></div>${modelTestReply ? `<div class="model-test-answer" role="status"><div class="model-test-answer-head"><strong>模型回答</strong><span>${esc(modelTestModel || draft.selectedModel)} · ${esc(modelTestProtocol || (isPi() ? 'chat.completions' : 'responses'))}</span></div><div class="model-test-markdown">${markdownHTML(modelTestReply)}</div></div>` : `<div class="model-test-empty">输入一段话并点击“发送测试”，模型的完整回答会显示在这里。</div>`}</section>
  <footer class="config-links"><button id="codex-dir" class="text-button" ${disabled}>${icon('folder', 16)}${isPi() ? '打开 pi 配置目录' : '打开 .codex 目录'}</button><button id="config-view" class="text-button" ${disabled}>${icon('edit', 16)}查看 ${configName()}</button>${draft.id ? `<button id="delete" class="text-button delete-button" ${disabled}>${icon('trash', 16)}删除配置</button>` : ''}</footer>`;
 }
 function renderSettings() {
@@ -418,6 +472,8 @@ function bind() {
  on('name', 'input', (e) => { draft.name = e.target.value; dirty = true; });
  on('url', 'input', (e) => { draft.baseUrl = e.target.value; dirty = true; });
  on('key', 'input', (e) => { draft.apiKey = e.target.value; dirty = true; });
+ on('model-test-input', 'input', (e) => { modelTestInput = e.target.value; });
+ on('model-test-input', 'keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.getElementById('test-model')?.click(); } });
  on('clear-key', 'change', (e) => { draft.clearApiKey = e.target.checked; dirty = true; });
  on('model', 'change', (e) => { draft.selectedModel = e.target.value; dirty = true; render(); });
  document.querySelectorAll('[data-profile]').forEach((b) => b.addEventListener('click', () => { page = 'models'; treeExpanded.models = true; resetPageScroll = true; edit(profileFor(b.dataset.profile)); }));
@@ -474,7 +530,7 @@ function bind() {
  on('advanced-editor', 'input', (e) => { if (advancedPreview) advancedPreview.content = e.target.value; advancedDirty = true; });
  on('advanced-save', 'click', () => run('advanced-save', async () => { if (advancedPreview.kind === 'memory') { if (advancedPreview.isNew) await CreateMemory(advancedPreview.name || '', advancedPreview.content || ''); else await WriteMemory(advancedPreview.path, advancedPreview.content || ''); } else await WriteRuntimeDocument(advancedPreview.path, advancedPreview.content || ''); advancedDirty = false; await refreshAdvanced(); message = advancedPreview.kind === 'memory' ? '记忆已保存。' : '高级配置已保存，原文件已备份。'; }));
  on('advanced-close', 'click', () => { if (advancedDirty && !window.confirm('高级配置有未保存修改，确定关闭吗？')) return; advancedPreview = null; advancedDirty = false; render(); });
- on('app-target', 'change', (e) => run('target', async () => { marketGeneration++; state = await SetTarget(e.target.value); selectedCLI=isPi()?'pi':'codex'; skillsState = { root: '', target: state.target, skills: [], trash: [], catalog: [], markets: skillsState.markets, errors: [] }; selectedSkills.clear(); if (page === 'skills') await refreshSkills(); if (page === 'advanced') await refreshAdvanced(); message = isPi() ? '已选择 pi agent。' : '已选择 ChatGPT / Codex。'; }));
+ on('app-target', 'change', (e) => run('target', async () => { marketGeneration++; state = await SetTarget(e.target.value); selectedCLI=isPi()?'pi':'codex'; skillMarket='all'; skillsState = { root: '', target: state.target, skills: [], trash: [], catalog: [], markets: skillsState.markets, errors: [] }; selectedSkills.clear(); if (page === 'skills') await refreshSkills(); if (page === 'cli') await refreshCLI(); if (page === 'advanced') await refreshAdvanced(); message = isPi() ? '已选择 pi agent。' : '已选择 ChatGPT / Codex。'; }));
  document.querySelectorAll('[data-install-skill]').forEach((b) => b.addEventListener('click', () => run('skill-install', async () => { if (b.dataset.installTarget === 'shared') { await InstallSkillTo(b.dataset.installSkill, 'shared'); message = '技能已安装到共享目录。'; } else { skillsState.skills = await InstallSkillTo(b.dataset.installSkill, 'active'); await refreshSkills(); message = '技能已安装。'; } })));
  document.querySelectorAll('[data-delete-skill]').forEach((b) => b.addEventListener('click', () => run('skill-delete', async () => { await DeleteSkill(b.dataset.deleteSkill); selectedSkills.delete(b.dataset.deleteSkill); await refreshSkills(); message = '技能已移入回收区，可恢复。'; })));
  on('check-update', 'click', () => run('update-check', async () => { updateState = await CheckForUpdate(); }));
@@ -496,6 +552,13 @@ function bind() {
   draft.models = (await FetchModels(draft)).map((m) => ({ ...m, supportsImages: previous.has(m.id) ? Boolean(previous.get(m.id)) : Boolean(m.supportsImages) }));
   if (!draft.models.some((m) => m.id === draft.selectedModel)) draft.selectedModel = draft.models[0]?.id || '';
   dirty = true; message = '发现 ' + draft.models.length + ' 个模型，已自动填入。';
+ }));
+ on('test-model', 'click', () => run('test-model', async () => {
+  const result = await TestModel(draft, state.target, modelTestInput);
+  modelTestReply = result.reply || '';
+  modelTestModel = result.model || draft.selectedModel;
+  modelTestProtocol = result.protocol || '';
+  message = language === 'en' ? 'Model replied.' : '模型已回复。';
  }));
  on('save', 'click', () => run('save', async () => { await save(); message = '配置已保存。'; }));
  on('restore', 'click', () => run('restore', async () => { state = await ActivateOpenAI(); message = isPi() ? '已恢复 pi 切换前的配置。' : '已恢复切换前的 OpenAI 设置。'; }));
@@ -533,13 +596,20 @@ const modal = document.querySelector('.settings-modal, .config-modal');
 });
 window.addEventListener('resize', () => applySidebarWidth());
 async function initialLoad() {
- loaded = true;
  render();
  try {
   state = await withTimeout(LoadState(), 8000, '读取当前配置超时，请点击刷新重试');
-  try { workspaceState = await withTimeout(LoadWorkspaceState(), 8000, '读取工作区超时'); } catch {}
-  try { advancedState = await withTimeout(LoadAdvancedState(), 8000, '读取高级设置超时'); } catch {}
+  loaded = true;
   if (state.profiles.length) edit(state.profiles[0]); else render();
+  try {
+   workspaceState = await withTimeout(LoadWorkspaceState(), 8000, '读取工作区超时');
+   workspaceState.projects ||= [];
+   render();
+  } catch {}
+  try {
+   advancedState = await withTimeout(LoadAdvancedState(), 8000, '读取高级设置超时');
+   if (page === 'advanced') render();
+  } catch {}
  } catch (e) {
   error = e?.message || String(e);
   render();

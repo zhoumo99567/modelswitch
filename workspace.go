@@ -51,7 +51,7 @@ type AgentConfigState struct {
 var agentDocumentNames = []string{"AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"}
 
 func workspaceState(s storeFile) WorkspaceState {
-	projects := append([]Workspace(nil), s.Workspaces...)
+	projects := append([]Workspace{}, s.Workspaces...)
 	sort.Slice(projects, func(i, j int) bool { return strings.ToLower(projects[i].Name) < strings.ToLower(projects[j].Name) })
 	return WorkspaceState{Projects: projects, ActiveID: s.ActiveWorkspaceID}
 }

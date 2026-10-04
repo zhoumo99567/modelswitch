@@ -1,10 +1,28 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestWorkspaceStateWithoutWorkspacesReturnsJSONArray(t *testing.T) {
+	// Existing profiles.json files predate the workspaces field. The sidebar
+	// reads projects.length, so null would break the entire initial render.
+	state := workspaceState(storeFile{})
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if string(result["projects"]) != "[]" {
+		t.Fatalf("projects must be [], got %s", result["projects"])
+	}
+}
 
 func TestValidateWorkspacePathAndInstructionDiscovery(t *testing.T) {
 	root := t.TempDir()

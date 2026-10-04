@@ -90,6 +90,8 @@ export function SetTarget(arg1:string):Promise<main.AppState>;
 
 export function StartUpdate():Promise<main.UpdateInfo>;
 
+export function TestModel(arg1:main.ProfileInput,arg2:string,arg3:string):Promise<main.ModelTestResult>;
+
 export function WriteAgentDocument(arg1:string,arg2:string):Promise<void>;
 
 export function WriteConfigText(arg1:string):Promise<void>;

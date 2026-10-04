@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,11 @@ type Model struct {
 	ID             string `json:"id"`
 	OwnedBy        string `json:"owned_by,omitempty"`
 	SupportsImages bool   `json:"supportsImages,omitempty"`
+}
+type ModelTestResult struct {
+	Model    string `json:"model"`
+	Reply    string `json:"reply"`
+	Protocol string `json:"protocol"`
 }
 type ProfileInput struct {
 	ID            string  `json:"id"`
@@ -260,6 +266,155 @@ func (a *App) FetchModels(input ProfileInput) ([]Model, error) {
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	return models, nil
 }
+
+func (a *App) TestModel(input ProfileInput, target, message string) (ModelTestResult, error) {
+	base, err := normalizeBaseURL(input.BaseURL)
+	if err != nil {
+		return ModelTestResult{}, err
+	}
+	model := strings.TrimSpace(input.SelectedModel)
+	if model == "" {
+		return ModelTestResult{}, errors.New("请先选择要测试的模型")
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ModelTestResult{}, errors.New("请输入测试内容")
+	}
+	if len([]rune(message)) > 4000 {
+		return ModelTestResult{}, errors.New("测试内容不能超过 4000 个字符")
+	}
+	key, err := credentialForInput(input, base)
+	if err != nil {
+		return ModelTestResult{}, err
+	}
+	var endpoint string
+	var payload any
+	protocol := "responses"
+	if target == "pi" {
+		endpoint = base + "/chat/completions"
+		protocol = "chat.completions"
+		payload = struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			MaxTokens   int `json:"max_tokens"`
+			Temperature int `json:"temperature"`
+		}{Model: model, Messages: []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{{Role: "user", Content: message}}, MaxTokens: 512, Temperature: 0}
+	} else if target == "chatgpt" {
+		endpoint = base + "/responses"
+		payload = struct {
+			Model           string `json:"model"`
+			Input           string `json:"input"`
+			MaxOutputTokens int    `json:"max_output_tokens"`
+		}{Model: model, Input: message, MaxOutputTokens: 512}
+	} else {
+		return ModelTestResult{}, errors.New("不支持的模型测试目标")
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return ModelTestResult{}, errors.New("生成模型测试请求失败")
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return ModelTestResult{}, err
+	}
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ModelTestResult{}, errors.New("无法连接模型，请检查地址、端口和服务是否启动")
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (2<<20)+1))
+	if err != nil {
+		return ModelTestResult{}, errors.New("读取模型测试响应失败")
+	}
+	if len(data) > 2<<20 {
+		return ModelTestResult{}, errors.New("模型测试响应超过 2 MB")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ModelTestResult{}, fmt.Errorf("模型测试失败：HTTP %d，请检查模型、地址和 API Key", resp.StatusCode)
+	}
+	reply, responseModel := modelTestText(data, target)
+	if reply == "" {
+		return ModelTestResult{}, errors.New("模型已返回响应，但没有可读文本")
+	}
+	if responseModel == "" {
+		responseModel = model
+	}
+	return ModelTestResult{Model: responseModel, Reply: reply, Protocol: protocol}, nil
+}
+
+func modelTestText(data []byte, target string) (string, string) {
+	var decoded struct {
+		Model      string `json:"model"`
+		OutputText string `json:"output_text"`
+		Choices    []struct {
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Output []struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if json.Unmarshal(data, &decoded) != nil {
+		return "", ""
+	}
+	if target == "pi" && len(decoded.Choices) > 0 {
+		return rawModelText(decoded.Choices[0].Message.Content), decoded.Model
+	}
+	if decoded.OutputText != "" {
+		return decoded.OutputText, decoded.Model
+	}
+	var builder strings.Builder
+	for _, item := range decoded.Output {
+		for _, content := range item.Content {
+			if strings.TrimSpace(content.Text) != "" {
+				if builder.Len() > 0 {
+					builder.WriteString("\n")
+				}
+				builder.WriteString(content.Text)
+			}
+		}
+	}
+	return builder.String(), decoded.Model
+}
+
+func rawModelText(raw json.RawMessage) string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.TrimSpace(text)
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var builder strings.Builder
+	for _, part := range parts {
+		if strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(part.Text)
+	}
+	return strings.TrimSpace(builder.String())
+}
 func credentialForInput(input ProfileInput, base string) (string, error) {
 	if input.ClearAPIKey {
 		return "", nil
@@ -329,7 +484,7 @@ func (a *App) ActivateProfile(id string) (AppState, error) {
 		if _, err = unprotectSecret(profile.Secret); err != nil {
 			return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
 		}
-		helper, err = os.Executable()
+		helper, err = credentialHelperPath()
 		if err != nil {
 			return AppState{}, errors.New("无法定位当前程序，未修改配置")
 		}
@@ -521,6 +676,65 @@ func dataPath() string {
 		return filepath.Join(dir, "profiles.json")
 	}
 	return legacyDataPath()
+}
+
+// credentialHelperPath returns a stable executable for Codex's auth.command.
+// Wails development builds use a temporary *-dev.exe that is renamed or
+// removed when the dev process restarts. Copying it to a fixed name keeps an
+// already-written config usable across dev restarts and release updates.
+func credentialHelperPath() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(executable)
+	name := "model-switcher-token"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	base := strings.ToLower(filepath.Base(executable))
+	if !strings.Contains(base, "-dev") && !strings.Contains(base, ".test") {
+		return executable, nil
+	}
+	target := filepath.Join(dir, name)
+	if filepath.Clean(executable) == filepath.Clean(target) {
+		return target, nil
+	}
+	data, err := os.ReadFile(executable)
+	if err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(dir, ".model-switcher-token-*")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err = temp.Write(data); err != nil {
+		_ = temp.Close()
+		return "", err
+	}
+	if err = temp.Chmod(0755); err != nil {
+		_ = temp.Close()
+		return "", err
+	}
+	if err = temp.Close(); err != nil {
+		return "", err
+	}
+	if err = os.Rename(tempPath, target); err != nil {
+		// Windows cannot rename over an existing destination. A currently
+		// running helper remains usable, so keep it when replacement is locked.
+		if removeErr := os.Remove(target); removeErr != nil {
+			if _, statErr := os.Stat(target); statErr == nil {
+				return target, nil
+			}
+			return "", err
+		}
+		if err = os.Rename(tempPath, target); err != nil {
+			return "", err
+		}
+	}
+	return target, nil
 }
 func legacyDataPath() string {
 	base, _ := os.UserConfigDir()

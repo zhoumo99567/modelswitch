@@ -316,7 +316,7 @@ func (a *App) activatePiProfile(store storeFile, p storedProfile) (AppState, err
 		if _, err = unprotectSecret(p.Secret); err != nil {
 			return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
 		}
-		helper, err = os.Executable()
+		helper, err = credentialHelperPath()
 		if err != nil {
 			return AppState{}, err
 		}

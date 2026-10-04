@@ -60,3 +60,25 @@ func TestCLILaunchQuotingAndPathResolution(t *testing.T) {
 		t.Fatal("shell injection occurred")
 	}
 }
+
+func TestResolveCLIWindowsPrefersRunnableWrapper(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows CLI resolution")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pi"), []byte("#!/bin/sh\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pi.cmd"), []byte("@echo off\r\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+	t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC")
+	resolved, err := resolveCLI("pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".cmd" && ext != ".bat" && ext != ".exe" {
+		t.Fatalf("resolved an unsupported Windows CLI file: %q", resolved)
+	}
+}

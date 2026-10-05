@@ -120,6 +120,11 @@ button svg { flex-shrink: 0; }
 .field > span { color: var(--secondary); font-size: 13px; font-weight: 550; }
 .field em { margin-left: 6px; color: var(--muted); font-size: 11px; font-style: normal; font-weight: 400; }
 .field input, .field select { min-width: 0; width: 100%; min-height: 44px; padding: 11px 13px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--input); font-size: 13px; }
+.secret-field { position: relative; display: flex; align-items: center; }
+.secret-field input { padding-right: 82px; }
+.secret-actions { position: absolute; right: 7px; display: flex; align-items: center; gap: 2px; }
+.secret-actions .icon-button { width: 32px; height: 32px; color: var(--muted); }
+.secret-actions .icon-button:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
 .field input::placeholder { color: var(--muted); opacity: 1; }
 .field small { color: var(--secondary); font-size: 11px; line-height: 1.7; }
 .clear-key { display: flex; align-items: center; gap: 8px; color: var(--secondary); font-size: 12px; }

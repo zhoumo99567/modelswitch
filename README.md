@@ -4,7 +4,7 @@
 
 双击 build/bin/model-switcher.exe，添加本地服务，填写 API Base URL（例如 http://127.0.0.1:1234/v1），点击“获取模型”，选择模型后点击“保存”保留连接，或点击右侧“应用到 ChatGPT / pi agent”保存并应用。左侧菜单用于选择要编辑的配置。
 
-工具会从 /v1/models 读取模型列表，默认在程序同级的 `profiles.json` 读取和写入配置，在 Windows 使用 DPAPI、macOS 使用系统钥匙串安全保存 API Key，在用户目录的 `.codex/config.toml` 中写入本地 provider，切换前备份原始配置，并支持恢复切换前的 model 与 model_provider。
+工具会从 /v1/models 读取模型列表，默认在程序同级的 `profiles.json` 读取和写入配置，API Key 直接保存在该文件中；界面默认用密码点隐藏，支持临时显示和复制。在用户目录的 `.codex/config.toml` 中写入本地 provider，切换前备份原始配置，并支持恢复切换前的 model 与 model_provider。
 
 切换本地模型或“切回 OpenAI”时，工具会先关闭再重启官方 ChatGPT 应用。启动工具时会自动查找并显示当前 ChatGPT 路径。Windows 优先查找已安装应用和运行进程，并以开始菜单作为回退；macOS 通过 Spotlight 和常用应用目录查找 `ChatGPT.app`。点击路径可打开系统原生文件选择窗口（Windows 选择 `.exe` / `.lnk`，macOS 选择 `.app`），选择后自动保存，取消不会修改原设置。点击“自动查找”恢复自动模式；自动模式每次重新解析路径以适应应用更新。
 
@@ -28,7 +28,7 @@
 
 安装会锁定仓库提交版本，在临时目录校验路径、符号链接、重复文件、`SKILL.md`、单文件和总大小，再移动到技能目录。安装均按目录下载单个技能；Anthropic 和 OpenAI Plugins 的市场目录也按文件读取，其他市场的目录通过仓库 ZIP 读取。安装后保存来源记录，不自动运行技能脚本。
 
-顶部选择“pi agent”后，已保存的服务配置可直接切换为 pi 的默认模型。工具保留 `models.json` 中其他 provider 和 `settings.json` 中其他设置，写入 OpenAI Chat Completions 兼容 provider 以及 `defaultProvider` / `defaultModel`；两份配置先备份到 pi 目录中的 `.model-switcher-backups`。API Key 仍使用系统安全存储，pi 通过工具的凭据命令读取。点击“恢复原配置”恢复切换前的 provider 和默认模型。可以在工具内编辑 `models.json`，支持 JSON/JSONC 校验并备份；写入时配置对象会规范化为 JSON，原始注释保存在备份中。视觉模型需在模型面板勾选“支持图像输入”、点击“应用到 pi agent”（会先保存修改）；该选项按模型保存，生成 `input: ["text", "image"]`，模型服务也必须接受图像请求。在现有 pi 会话中使用 `/model` 选择模型，新会话使用已保存的默认值；技能安装后使用 `/reload`。
+顶部选择“pi agent”后，已保存的服务配置可直接切换为 pi 的默认模型。工具保留 `models.json` 中其他 provider 和 `settings.json` 中其他设置，写入 OpenAI Chat Completions 兼容 provider 以及 `defaultProvider` / `defaultModel`；两份配置先备份到 pi 目录中的 `.model-switcher-backups`。API Key 直接从本地配置读取，pi 通过工具的凭据命令读取。点击“恢复原配置”恢复切换前的 provider 和默认模型。可以在工具内编辑 `models.json`，支持 JSON/JSONC 校验并备份；写入时配置对象会规范化为 JSON，原始注释保存在备份中。视觉模型需在模型面板勾选“支持图像输入”、点击“应用到 pi agent”（会先保存修改）；该选项按模型保存，生成 `input: ["text", "image"]`，模型服务也必须接受图像请求。在现有 pi 会话中使用 `/model` 选择模型，新会话使用已保存的默认值；技能安装后使用 `/reload`。
 
 用于 ChatGPT / Codex 的服务还需要兼容 /v1/responses；仅支持 /v1/chat/completions 时需要协议转换代理。pi agent 使用 /v1/chat/completions。
 
@@ -46,5 +46,4 @@ macOS 发布命令（需要在 macOS 主机安装 Xcode / WebKit 环境执行）
 
 Windows 发布文件：`build/bin/model-switcher.exe`，是便携版单文件 exe，不需要安装 Go、Node.js 或 Wails。Windows 10/11 通常已包含 WebView2。
 
-macOS 发布文件：`build/bin/ModelSwitcher.app`。macOS 版本使用系统钥匙串保存 API Key；分发给其他用户时建议在 macOS 上签名并公证。
-
+macOS 发布文件：`build/bin/ModelSwitcher.app`。API Key 会随程序同级 `profiles.json` 保存，分发或备份该文件时请一并考虑其中的凭据内容。

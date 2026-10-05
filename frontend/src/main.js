@@ -32,6 +32,9 @@ const paths = {
  edit: '<path d="m4 16-.8 4.8L8 20l10.8-10.8a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/>',
  download: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
  shield: '<path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-3Z"/><path d="m9 12 2 2 4-4"/>',
+ eye: '<path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/>',
+ eyeOff: '<path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.4 3.8M6.2 6.8C3.9 8.1 2.5 12 2.5 12s3.5 6 9.5 6c1.1 0 2.1-.2 3-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+ copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
 };
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
@@ -108,6 +111,7 @@ let advancedState = { target: 'chatgpt', codexHome: '', piHome: '', memoryRoot: 
 let advancedSection = 'memory';
 let advancedPreview = null;
 let advancedDirty = false;
+let keyVisible = false;
 let skillSection = 'installed';
 let treeExpanded = { models: true, skills: true, cli: true, advanced: true };
 try { treeExpanded = { ...treeExpanded, ...JSON.parse(localStorage.getItem('model-switcher-navigation') || '{}') }; } catch {}
@@ -211,7 +215,7 @@ function applyPreferences() {
 
 function profileFor(id) { return state.profiles.find((p) => p.id === id); }
 function currentProfile() { return profileFor(draft.id); }
-function edit(profile) { draft = profile ? { ...profile, apiKey: '', clearApiKey: false, models: profile.models || [] } : emptyDraft(); dirty = false; error = ''; message = ''; modelTestReply = ''; modelTestModel = ''; modelTestProtocol = ''; render(); }
+function edit(profile) { draft = profile ? { ...profile, apiKey: profile.apiKey || '', clearApiKey: false, models: profile.models || [] } : emptyDraft(); keyVisible = false; dirty = false; error = ''; message = ''; modelTestReply = ''; modelTestModel = ''; modelTestProtocol = ''; render(); }
 function currentIsLocal() { return state.activeProvider === 'model_switcher_local'; }
 function formatBytes(bytes) {
  if (!bytes) return '0 B';
@@ -419,7 +423,7 @@ function renderModelPage(disabled, title) {
  <div class="workspace-grid"><section class="panel config-panel"><div class="panel-heading"><div>${icon('server', 18)}<h3>服务连接</h3></div><span class="muted-label">${draft.id ? '编辑配置' : '新建配置'}</span></div><div class="form-grid">
  <label class="field"><span>配置名称</span><input id="name" placeholder="例如：我的 LM Studio" value="${esc(draft.name)}" maxlength="80" ${disabled}></label>
  <label class="field"><span>API 地址</span><input id="url" type="url" placeholder="http://127.0.0.1:1234/v1" value="${esc(draft.baseUrl)}" ${disabled}><small>支持本机、局域网和远程 OpenAI 兼容服务。</small></label>
- <label class="field"><span>API Key <em>可选</em></span><input id="key" type="password" autocomplete="off" value="${esc(draft.apiKey)}" placeholder="${draft.hasApiKey ? 'Key 已加密保存；留空保持原值' : '服务无需认证时可留空'}" ${disabled}></label>
+ <label class="field"><span>API Key <em>可选</em></span><div class="secret-field"><input id="key" type="${keyVisible ? 'text' : 'password'}" autocomplete="off" value="${esc(draft.apiKey)}" placeholder="${draft.hasApiKey && !draft.apiKey ? 'Key 已保存但无法读取，请重新填写' : '服务无需认证时可留空'}" ${disabled}><div class="secret-actions"><button type="button" class="icon-button" id="key-toggle" aria-label="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" title="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" ${disabled}>${icon(keyVisible ? 'eyeOff' : 'eye', 16)}</button><button type="button" class="icon-button" id="key-copy" aria-label="复制 API Key" title="复制 API Key" ${disabled || !draft.apiKey ? 'disabled' : ''}>${icon('copy', 16)}</button></div></div><small>Key 直接保存在 profiles.json，界面默认隐藏；可显示或复制。</small></label>
  ${draft.hasApiKey ? `<label class="clear-key"><input id="clear-key" type="checkbox" ${draft.clearApiKey ? 'checked' : ''} ${disabled}>移除已保存的 Key</label>` : ''}</div><div class="form-actions"><button class="button button-secondary" id="save" ${disabled}>${icon('save', 16)}${busy === 'save' ? '正在保存…' : '保存'}</button><button class="button button-secondary" id="fetch" ${disabled}>${icon('refresh', 16)}${busy === 'fetch' ? '正在获取…' : '获取模型'}</button></div></section>
  <section class="panel model-panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>选择模型</h3></div><span class="muted-label">${draft.models.length} 个可用</span></div><label class="field"><span>使用的模型</span><select id="model" ${disabled}${draft.models.length ? '' : ' disabled'}><option value="">${draft.models.length ? '选择一个模型' : '等待获取模型列表'}</option>${draft.models.map((m) => `<option value="${esc(m.id)}" ${m.id === draft.selectedModel ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}</select></label>
  ${isPi() ? `<div class="model-capability"><label><input id="model-images" type="checkbox" ${selected?.supportsImages ? 'checked' : ''} ${disabled}${draft.selectedModel ? '' : ' disabled'}>支持图像输入</label><small>仅在模型和 API 支持图像时启用。</small></div>` : ''}<div class="model-list">${rows}</div><p class="model-hint">${isPi() ? 'pi agent 使用 <strong>/v1/chat/completions</strong>' : '接入 Codex 需要兼容 <strong>/v1/responses</strong>'}</p></section></div>
@@ -472,6 +476,19 @@ function bind() {
  on('name', 'input', (e) => { draft.name = e.target.value; dirty = true; });
  on('url', 'input', (e) => { draft.baseUrl = e.target.value; dirty = true; });
  on('key', 'input', (e) => { draft.apiKey = e.target.value; dirty = true; });
+ on('key-toggle', 'click', () => { keyVisible = !keyVisible; render(); });
+ on('key-copy', 'click', async () => {
+  if (!draft.apiKey) return;
+  try {
+   if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(draft.apiKey);
+   else {
+    const helper = document.createElement('textarea'); helper.value = draft.apiKey; helper.style.position = 'fixed'; helper.style.opacity = '0'; document.body.appendChild(helper); helper.select();
+    if (!document.execCommand('copy')) throw new Error('copy failed');
+    helper.remove();
+   }
+   message = 'API Key 已复制。'; error = ''; render();
+  } catch { error = '无法复制 API Key，请手动选择后复制。'; render(); }
+ });
  on('model-test-input', 'input', (e) => { modelTestInput = e.target.value; });
  on('model-test-input', 'keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.getElementById('test-model')?.click(); } });
  on('clear-key', 'change', (e) => { draft.clearApiKey = e.target.checked; dirty = true; });
@@ -570,7 +587,7 @@ async function save() {
  const id = draft.id;
  state = await SaveProfile(draft);
  const profile = state.profiles.find((p) => p.id === id) || state.profiles[state.profiles.length - 1];
- draft = { ...profile, apiKey: '', clearApiKey: false, models: profile.models || [] }; dirty = false;
+ draft = { ...profile, apiKey: profile?.apiKey || '', clearApiKey: false, models: profile.models || [] }; keyVisible = false; dirty = false;
 }
 function withTimeout(promise, milliseconds, message) {
  let timer;

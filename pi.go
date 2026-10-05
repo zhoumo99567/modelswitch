@@ -205,7 +205,8 @@ func (a *App) loadPiState(store storeFile) (AppState, error) {
 	_ = json.Unmarshal(providers[providerID], &managed)
 	for _, p := range store.Profiles {
 		v := p.ProfileView
-		v.HasAPIKey = p.Secret != ""
+		v.APIKey = storedAPIKey(p)
+		v.HasAPIKey = v.APIKey != "" || p.Secret != ""
 		if v.Models == nil {
 			v.Models = []Model{}
 		}
@@ -236,7 +237,7 @@ func piProfileObjects(models, settings map[string]json.RawMessage, p storedProfi
 		}
 	}
 	key := "model-switcher-local"
-	if p.Secret != "" {
+	if p.Secret != "" || p.APIKey != "" {
 		var err error
 		key, err = shellTokenCommand(helper, p.ID)
 		if err != nil {
@@ -312,10 +313,10 @@ func (a *App) activatePiProfile(store storeFile, p storedProfile) (AppState, err
 		store.PiBaseline = &piBaseline{Root: root, Provider: providers[providerID], DefaultProvider: settings["defaultProvider"], DefaultModel: settings["defaultModel"]}
 	}
 	helper := ""
-	if p.Secret != "" {
-		if _, err = unprotectSecret(p.Secret); err != nil {
-			return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
-		}
+	if p.Secret != "" && storedAPIKey(p) == "" && p.APIKey == "" {
+		return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
+	}
+	if storedAPIKey(p) != "" {
 		helper, err = credentialHelperPath()
 		if err != nil {
 			return AppState{}, err

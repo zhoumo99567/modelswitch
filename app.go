@@ -49,6 +49,7 @@ type ProfileView struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
 	BaseURL       string  `json:"baseUrl"`
+	APIKey        string  `json:"apiKey,omitempty"`
 	HasAPIKey     bool    `json:"hasApiKey"`
 	SelectedModel string  `json:"selectedModel"`
 	Models        []Model `json:"models"`
@@ -71,6 +72,23 @@ type storedProfile struct {
 	ProfileView
 	Secret string `json:"secret,omitempty"`
 }
+
+// storedAPIKey returns the current plaintext key. New profiles store APIKey
+// directly; Secret remains as a compatibility path for older installations.
+func storedAPIKey(profile storedProfile) string {
+	if profile.APIKey != "" {
+		return profile.APIKey
+	}
+	if profile.Secret == "" {
+		return ""
+	}
+	key, err := unprotectSecret(profile.Secret)
+	if err != nil {
+		return ""
+	}
+	return key
+}
+
 type baseline struct {
 	Model    *string `json:"model"`
 	Provider *string `json:"provider"`
@@ -119,7 +137,8 @@ func (a *App) loadState() (AppState, error) {
 	}
 	for _, p := range store.Profiles {
 		v := p.ProfileView
-		v.HasAPIKey = p.Secret != ""
+		v.APIKey = storedAPIKey(p)
+		v.HasAPIKey = v.APIKey != "" || p.Secret != ""
 		if v.Models == nil {
 			v.Models = []Model{}
 		}
@@ -150,10 +169,12 @@ func (a *App) SaveProfile(input ProfileInput) (AppState, error) {
 	}
 	index := -1
 	secret := ""
+	apiKey := ""
 	for i, p := range store.Profiles {
 		if p.ID == id {
 			index = i
 			secret = p.Secret
+			apiKey = p.APIKey
 		}
 	}
 	if input.ID != "" && index < 0 {
@@ -161,17 +182,23 @@ func (a *App) SaveProfile(input ProfileInput) (AppState, error) {
 	}
 	if input.ClearAPIKey {
 		secret = ""
+		apiKey = ""
 	} else if input.APIKey != "" {
-		secret, err = protectSecret(input.APIKey)
-		if err != nil {
-			return AppState{}, err
+		apiKey = input.APIKey
+		secret = ""
+	} else if apiKey == "" && secret != "" {
+		// Migrate old encrypted values when this platform can still read them.
+		if recovered := storedAPIKey(storedProfile{Secret: secret}); recovered != "" {
+			apiKey = recovered
+			secret = ""
 		}
 	}
 	// Never carry an existing credential to an edited endpoint without re-entry.
 	if index >= 0 && store.Profiles[index].BaseURL != base && input.APIKey == "" {
 		secret = ""
+		apiKey = ""
 	}
-	p := storedProfile{ProfileView: ProfileView{ID: id, Name: strings.TrimSpace(input.Name), BaseURL: base, SelectedModel: input.SelectedModel, Models: input.Models}, Secret: secret}
+	p := storedProfile{ProfileView: ProfileView{ID: id, Name: strings.TrimSpace(input.Name), BaseURL: base, APIKey: apiKey, SelectedModel: input.SelectedModel, Models: input.Models}, Secret: secret}
 	if index < 0 {
 		store.Profiles = append(store.Profiles, p)
 	} else {
@@ -428,7 +455,10 @@ func credentialForInput(input ProfileInput, base string) (string, error) {
 	}
 	for _, p := range store.Profiles {
 		if p.ID == input.ID && p.BaseURL == base {
-			return unprotectSecret(p.Secret)
+			if key := storedAPIKey(p); key != "" {
+				return key, nil
+			}
+			return "", nil
 		}
 	}
 	return "", nil
@@ -440,7 +470,10 @@ func tokenForProfile(id string) (string, error) {
 	}
 	for _, p := range store.Profiles {
 		if p.ID == id {
-			return unprotectSecret(p.Secret)
+			if key := storedAPIKey(p); key != "" {
+				return key, nil
+			}
+			return "", errors.New("找不到凭据")
 		}
 	}
 	return "", errors.New("找不到凭据")
@@ -480,10 +513,10 @@ func (a *App) ActivateProfile(id string) (AppState, error) {
 		store.Baseline = &baseline{Model: optionalString(config, "model"), Provider: optionalString(config, "model_provider")}
 	}
 	helper := ""
-	if profile.Secret != "" {
-		if _, err = unprotectSecret(profile.Secret); err != nil {
-			return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
-		}
+	if profile.Secret != "" && storedAPIKey(*profile) == "" && profile.APIKey == "" {
+		return AppState{}, errors.New("无法解密已保存的 Key，请重新填写")
+	}
+	if storedAPIKey(*profile) != "" {
 		helper, err = credentialHelperPath()
 		if err != nil {
 			return AppState{}, errors.New("无法定位当前程序，未修改配置")

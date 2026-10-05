@@ -1,5 +1,5 @@
 export namespace main {
-	
+
 	export class MCPServer {
 	    id: string;
 	    name: string;
@@ -10,11 +10,11 @@ export namespace main {
 	    endpoint?: string;
 	    command?: string;
 	    enabled?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPServer(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -35,11 +35,11 @@ export namespace main {
 	    path: string;
 	    bytes: number;
 	    modifiedAt?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MemoryEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -60,11 +60,11 @@ export namespace main {
 	    exists: boolean;
 	    bytes: number;
 	    modifiedAt?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeDocument(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -87,11 +87,11 @@ export namespace main {
 	    memories: MemoryEntry[];
 	    mcpServers: MCPServer[];
 	    diagnostics: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AdvancedState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.target = source["target"];
@@ -103,7 +103,7 @@ export namespace main {
 	        this.mcpServers = this.convertValues(source["mcpServers"], MCPServer);
 	        this.diagnostics = source["diagnostics"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -140,11 +140,11 @@ export namespace main {
 	    url?: string;
 	    trashId?: string;
 	    sourceId?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -177,11 +177,11 @@ export namespace main {
 	    overridden: boolean;
 	    bytes: number;
 	    modifiedAt?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AgentDocument(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -201,11 +201,11 @@ export namespace main {
 	    name: string;
 	    path: string;
 	    lastUsed?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Workspace(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -221,11 +221,11 @@ export namespace main {
 	    piHome: string;
 	    sharedSkillsRoot: string;
 	    sharedSkills: SkillInfo[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AgentConfigState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.workspace = this.convertValues(source["workspace"], Workspace);
@@ -235,7 +235,7 @@ export namespace main {
 	        this.sharedSkillsRoot = source["sharedSkillsRoot"];
 	        this.sharedSkills = this.convertValues(source["sharedSkills"], SkillInfo);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -254,16 +254,16 @@ export namespace main {
 		    return a;
 		}
 	}
-	
+
 	export class Model {
 	    id: string;
 	    owned_by?: string;
 	    supportsImages?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Model(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -275,24 +275,26 @@ export namespace main {
 	    id: string;
 	    name: string;
 	    baseUrl: string;
+	    apiKey?: string;
 	    hasApiKey: boolean;
 	    selectedModel: string;
 	    models: Model[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProfileView(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.baseUrl = source["baseUrl"];
+	        this.apiKey = source["apiKey"];
 	        this.hasApiKey = source["hasApiKey"];
 	        this.selectedModel = source["selectedModel"];
 	        this.models = this.convertValues(source["models"], Model);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -324,11 +326,11 @@ export namespace main {
 	    chatGptTarget: string;
 	    chatGptResolvedTarget: string;
 	    chatGptTargetError: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AppState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.target = source["target"];
@@ -344,7 +346,7 @@ export namespace main {
 	        this.chatGptResolvedTarget = source["chatGptResolvedTarget"];
 	        this.chatGptTargetError = source["chatGptTargetError"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -370,11 +372,11 @@ export namespace main {
 	    installed: boolean;
 	    path: string;
 	    error: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CLIInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -388,17 +390,17 @@ export namespace main {
 	export class CLIState {
 	    tools: CLIInfo[];
 	    directory: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CLIState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.tools = this.convertValues(source["tools"], CLIInfo);
 	        this.directory = source["directory"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -417,18 +419,18 @@ export namespace main {
 		    return a;
 		}
 	}
-	
-	
-	
+
+
+
 	export class ModelTestResult {
 	    model: string;
 	    reply: string;
 	    protocol: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ModelTestResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.model = source["model"];
@@ -444,11 +446,11 @@ export namespace main {
 	    clearApiKey: boolean;
 	    selectedModel: string;
 	    models: Model[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProfileInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -459,7 +461,7 @@ export namespace main {
 	        this.selectedModel = source["selectedModel"];
 	        this.models = this.convertValues(source["models"], Model);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -478,8 +480,8 @@ export namespace main {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class SkillCatalogItem {
 	    id: string;
 	    name: string;
@@ -497,11 +499,11 @@ export namespace main {
 	    installed: boolean;
 	    conflict: boolean;
 	    skillPath: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillCatalogItem(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -522,16 +524,16 @@ export namespace main {
 	        this.skillPath = source["skillPath"];
 	    }
 	}
-	
+
 	export class SkillMarket {
 	    id: string;
 	    name: string;
 	    repository: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillMarket(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -543,11 +545,11 @@ export namespace main {
 	    name: string;
 	    installs: number;
 	    url: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillPopularity(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -562,11 +564,11 @@ export namespace main {
 	    skills: SkillPopularity[];
 	    updatedAt: string;
 	    errors: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillMarketMetrics(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.market = source["market"];
@@ -576,7 +578,7 @@ export namespace main {
 	        this.updatedAt = source["updatedAt"];
 	        this.errors = source["errors"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -595,7 +597,7 @@ export namespace main {
 		    return a;
 		}
 	}
-	
+
 	export class SkillsState {
 	    root: string;
 	    target: string;
@@ -604,11 +606,11 @@ export namespace main {
 	    catalog: SkillCatalogItem[];
 	    markets: SkillMarket[];
 	    errors: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillsState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.root = source["root"];
@@ -619,7 +621,7 @@ export namespace main {
 	        this.markets = this.convertValues(source["markets"], SkillMarket);
 	        this.errors = source["errors"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -649,11 +651,11 @@ export namespace main {
 	    sha256?: string;
 	    signature?: string;
 	    updateAvailable: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UpdateInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.status = source["status"];
@@ -668,21 +670,21 @@ export namespace main {
 	        this.updateAvailable = source["updateAvailable"];
 	    }
 	}
-	
+
 	export class WorkspaceState {
 	    projects: Workspace[];
 	    activeId: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.projects = this.convertValues(source["projects"], Workspace);
 	        this.activeId = source["activeId"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

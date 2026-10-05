@@ -135,7 +135,7 @@ func localConfig(original []byte, profile storedProfile, helper string) ([]byte,
 	}
 	name := "ModelSwitcher / " + profile.ID + " / " + profile.Name
 	section := fmt.Sprintf("\n%s\n[model_providers.%s]\nname = %s\nbase_url = %s\nwire_api = \"responses\"\n", managedStart, providerID, strconv.Quote(name), strconv.Quote(profile.BaseURL))
-	if profile.Secret != "" {
+	if storedAPIKey(profile) != "" {
 		if helper == "" {
 			return nil, errors.New("缺少凭据助手")
 		}

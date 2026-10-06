@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type AgentConfigState struct {
 }
 
 var agentDocumentNames = []string{"AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"}
+
+// piPromptFileNames are pi agent prompt files: SYSTEM.md replaces the system
+// prompt, APPEND_SYSTEM.md appends to it.
+var piPromptFileNames = []string{"SYSTEM.md", "APPEND_SYSTEM.md"}
 
 func workspaceState(s storeFile) WorkspaceState {
 	projects := append([]Workspace{}, s.Workspaces...)
@@ -265,6 +270,16 @@ func appendDocuments(result *[]AgentDocument, target, scope, directory string, n
 	}
 }
 
+// appendOptionalDocuments lists files that act independently rather than as an
+// either/or candidate chain, so each one is "loaded" simply when it exists.
+func appendOptionalDocuments(result *[]AgentDocument, target, scope, directory string, names []string) {
+	for _, name := range names {
+		document := fileDocument(target, scope, name, filepath.Join(directory, name), false, false)
+		document.Loaded = document.Exists
+		*result = append(*result, document)
+	}
+}
+
 func agentDocuments(project Workspace) []AgentDocument {
 	documents := []AgentDocument{}
 	codexGlobal := candidate(codexHome(), append([]string{"AGENTS.override.md"}, agentDocumentNames...))
@@ -272,6 +287,7 @@ func agentDocuments(project Workspace) []AgentDocument {
 	piNames := append([]string{"AGENTS.override.md"}, agentDocumentNames...)
 	piGlobal := candidate(piRoot(), piNames)
 	appendDocuments(&documents, "pi", "global", piRoot(), piNames, piGlobal)
+	appendOptionalDocuments(&documents, "pi", "global", piRoot(), piPromptFileNames)
 	if project.Path == "" {
 		return documents
 	}
@@ -281,6 +297,7 @@ func agentDocuments(project Workspace) []AgentDocument {
 		pi := candidate(directory, piNames)
 		appendDocuments(&documents, "pi", "project", directory, piNames, pi)
 	}
+	appendOptionalDocuments(&documents, "pi", "project", filepath.Join(project.Path, ".pi"), piPromptFileNames)
 	return documents
 }
 
@@ -301,6 +318,15 @@ func allowedAgentDocument(path string) bool {
 	base := filepath.Base(path)
 	validName := base == "AGENTS.override.md" || base == "AGENTS.md" || base == "AGENTS.MD" || base == "CLAUDE.md" || base == "CLAUDE.MD"
 	if !validName {
+		if !slices.Contains(piPromptFileNames, base) {
+			return false
+		}
+		// pi prompt files only exist in the agent folder or a project's .pi folder.
+		project, projectErr := selectedWorkspace()
+		parent := filepath.Dir(path)
+		if parent == filepath.Clean(piRoot()) || (projectErr == nil && project.Path != "" && parent == filepath.Clean(filepath.Join(project.Path, ".pi"))) {
+			return true
+		}
 		return false
 	}
 	project, err := selectedWorkspace()

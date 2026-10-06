@@ -406,6 +406,10 @@ code { color: var(--secondary); font: 11px/1.7 ui-monospace, SFMono-Regular, Con
 .advanced-diagnostics { color: var(--secondary); font-size: 12px; line-height: 1.7; }
 .advanced-diagnostics ul { display: grid; gap: 6px; margin: 14px 0 0; padding-left: 18px; }
 .advanced-memory-name { margin-top: 22px; }
+.advanced-memory-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 240px); gap: 16px; margin-top: 22px; }
+.advanced-memory-fields .advanced-memory-name, .advanced-memory-fields .advanced-memory-scope { margin-top: 0; }
+.advanced-memory-fields .advanced-memory-scope select { width: 100%; }
 .skill-badge.muted { color: var(--muted); background: var(--surface-soft); }
 @media (max-width: 900px) { .advanced-grid { grid-template-columns: 1fr; } .advanced-settings-cards { grid-template-columns: 1fr; } }
+@media (max-width: 740px) { .advanced-memory-fields { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .advanced-hero { align-items: flex-start; flex-direction: column; } .advanced-toolbar .button { flex: 1 1 auto; } .advanced-server-detail { display: none; } }

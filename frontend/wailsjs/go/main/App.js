@@ -30,8 +30,8 @@ export function CleanSkills(arg1) {
   return window['go']['main']['App']['CleanSkills'](arg1);
 }
 
-export function CreateMemory(arg1, arg2) {
-  return window['go']['main']['App']['CreateMemory'](arg1, arg2);
+export function CreateMemory(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateMemory'](arg1, arg2, arg3);
 }
 
 export function DeleteMemory(arg1) {

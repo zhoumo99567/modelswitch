@@ -31,7 +31,13 @@ export namespace main {
 	export class MemoryEntry {
 	    id: string;
 	    name: string;
+	    title?: string;
 	    scope: string;
+	    origin?: string;
+	    project?: string;
+	    projectId?: string;
+	    tags?: string[];
+	    readOnly?: boolean;
 	    path: string;
 	    bytes: number;
 	    modifiedAt?: string;
@@ -44,7 +50,13 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.title = source["title"];
 	        this.scope = source["scope"];
+	        this.origin = source["origin"];
+	        this.project = source["project"];
+	        this.projectId = source["projectId"];
+	        this.tags = source["tags"];
+	        this.readOnly = source["readOnly"];
 	        this.path = source["path"];
 	        this.bytes = source["bytes"];
 	        this.modifiedAt = source["modifiedAt"];
@@ -82,9 +94,12 @@ export namespace main {
 	    target: string;
 	    codexHome: string;
 	    piHome: string;
-	    memoryRoot: string;
+	    memoryVault: string;
+	    currentProjectId?: string;
+	    codexMemoryRoot: string;
 	    documents: RuntimeDocument[];
 	    memories: MemoryEntry[];
+	    codexMemories: MemoryEntry[];
 	    mcpServers: MCPServer[];
 	    diagnostics: string[];
 
@@ -97,9 +112,12 @@ export namespace main {
 	        this.target = source["target"];
 	        this.codexHome = source["codexHome"];
 	        this.piHome = source["piHome"];
-	        this.memoryRoot = source["memoryRoot"];
+	        this.memoryVault = source["memoryVault"];
+	        this.currentProjectId = source["currentProjectId"];
+	        this.codexMemoryRoot = source["codexMemoryRoot"];
 	        this.documents = this.convertValues(source["documents"], RuntimeDocument);
 	        this.memories = this.convertValues(source["memories"], MemoryEntry);
+	        this.codexMemories = this.convertValues(source["codexMemories"], MemoryEntry);
 	        this.mcpServers = this.convertValues(source["mcpServers"], MCPServer);
 	        this.diagnostics = source["diagnostics"];
 	    }

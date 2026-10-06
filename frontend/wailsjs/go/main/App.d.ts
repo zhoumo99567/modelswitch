@@ -16,7 +16,7 @@ export function ChooseWorkspaceDirectory(arg1:string):Promise<string>;
 
 export function CleanSkills(arg1:Array<string>):Promise<Array<main.SkillInfo>>;
 
-export function CreateMemory(arg1:string,arg2:string):Promise<main.MemoryEntry>;
+export function CreateMemory(arg1:string,arg2:string,arg3:string):Promise<main.MemoryEntry>;
 
 export function DeleteMemory(arg1:string):Promise<void>;
 

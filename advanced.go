@@ -27,13 +27,21 @@ type RuntimeDocument struct {
 	ModifiedAt string `json:"modifiedAt,omitempty"`
 }
 
+// MemoryEntry describes one Markdown memory file.  Vault entries are editable;
+// entries produced by an agent's own memory system are reported read-only.
 type MemoryEntry struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Scope      string `json:"scope"`
-	Path       string `json:"path"`
-	Bytes      int64  `json:"bytes"`
-	ModifiedAt string `json:"modifiedAt,omitempty"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Title      string   `json:"title,omitempty"`
+	Scope      string   `json:"scope"`
+	Origin     string   `json:"origin,omitempty"`
+	Project    string   `json:"project,omitempty"`
+	ProjectID  string   `json:"projectId,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	ReadOnly   bool     `json:"readOnly,omitempty"`
+	Path       string   `json:"path"`
+	Bytes      int64    `json:"bytes"`
+	ModifiedAt string   `json:"modifiedAt,omitempty"`
 }
 
 type MCPServer struct {
@@ -49,14 +57,17 @@ type MCPServer struct {
 }
 
 type AdvancedState struct {
-	Target      string            `json:"target"`
-	CodexHome   string            `json:"codexHome"`
-	PiHome      string            `json:"piHome"`
-	MemoryRoot  string            `json:"memoryRoot"`
-	Documents   []RuntimeDocument `json:"documents"`
-	Memories    []MemoryEntry     `json:"memories"`
-	MCPServers  []MCPServer       `json:"mcpServers"`
-	Diagnostics []string          `json:"diagnostics"`
+	Target           string            `json:"target"`
+	CodexHome        string            `json:"codexHome"`
+	PiHome           string            `json:"piHome"`
+	MemoryVault      string            `json:"memoryVault"`
+	CurrentProjectID string            `json:"currentProjectId,omitempty"`
+	CodexMemoryRoot  string            `json:"codexMemoryRoot"`
+	Documents        []RuntimeDocument `json:"documents"`
+	Memories         []MemoryEntry     `json:"memories"`
+	CodexMemories    []MemoryEntry     `json:"codexMemories"`
+	MCPServers       []MCPServer       `json:"mcpServers"`
+	Diagnostics      []string          `json:"diagnostics"`
 }
 
 func runtimeDocument(path, target, scope, kind, format string) RuntimeDocument {
@@ -67,53 +78,6 @@ func runtimeDocument(path, target, scope, kind, format string) RuntimeDocument {
 		doc.ModifiedAt = info.ModTime().Format(time.RFC3339)
 	}
 	return doc
-}
-
-func memoryRoots(project Workspace) [][2]string {
-	roots := [][2]string{{"global", filepath.Join(codexHome(), "memories")}}
-	if project.Path != "" {
-		roots = append(roots, [2]string{"project", filepath.Join(project.Path, ".codex", "memories")})
-	}
-	return roots
-}
-
-func listMemoryEntries(project Workspace) ([]MemoryEntry, error) {
-	entries := []MemoryEntry{}
-	for _, root := range memoryRoots(project) {
-		if _, err := os.Stat(root[1]); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-		err := filepath.WalkDir(root[1], func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() {
-				if path != root[1] && filepath.Base(path) == ".trash" {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if entry.Type()&os.ModeSymlink != 0 || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
-				return nil
-			}
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			entries = append(entries, MemoryEntry{ID: filepath.Clean(path), Name: entry.Name(), Scope: root[0], Path: filepath.Clean(path), Bytes: info.Size(), ModifiedAt: info.ModTime().Format(time.RFC3339)})
-			if len(entries) > 512 {
-				return errors.New("记忆文件数量超过 512 个，请先清理后再加载")
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	sort.Slice(entries, func(i, j int) bool { return strings.ToLower(entries[i].Path) < strings.ToLower(entries[j].Path) })
-	return entries, nil
 }
 
 func runtimeDocuments(project Workspace) []RuntimeDocument {
@@ -156,16 +120,6 @@ func runtimeDocumentAllowed(path string) bool {
 func regularRuntimeFile(path string) bool {
 	info, err := os.Lstat(filepath.Clean(path))
 	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
-}
-
-func memoryPathAllowed(path string) bool {
-	path = filepath.Clean(path)
-	for _, root := range memoryRoots(func() Workspace { p, _ := selectedWorkspace(); return p }()) {
-		if isChildPath(root[1], path) && strings.EqualFold(filepath.Ext(path), ".md") {
-			return true
-		}
-	}
-	return false
 }
 
 func readMCPJSON(path string, target, scope string) ([]MCPServer, error) {
@@ -287,20 +241,18 @@ func (a *App) LoadAdvancedState() (AdvancedState, error) {
 		}
 	}
 	docs = filteredDocs
-	memories := []MemoryEntry{}
-	if target == "chatgpt" {
-		var err error
-		memories, err = listMemoryEntries(project)
-		if err != nil {
-			return AdvancedState{}, err
-		}
+	// The shared vault and Codex' own memory folder are listed for both agents so
+	// one memory set works across projects regardless of the selected app.
+	memories, err := listVaultMemories(project.Path)
+	if err != nil {
+		return AdvancedState{}, err
+	}
+	codexMemories, err := listCodexMemories()
+	if err != nil {
+		return AdvancedState{}, err
 	}
 	servers, diagnostics := loadMCPServers(docs)
-	memoryRoot := ""
-	if target == "chatgpt" {
-		memoryRoot = filepath.Join(codexHome(), "memories")
-	}
-	return AdvancedState{Target: target, CodexHome: codexHome(), PiHome: piRoot(), MemoryRoot: memoryRoot, Documents: docs, Memories: memories, MCPServers: servers, Diagnostics: diagnostics}, nil
+	return AdvancedState{Target: target, CodexHome: codexHome(), PiHome: piRoot(), MemoryVault: memoryVaultRoot(), CurrentProjectID: memoryProjectID(project.Path), CodexMemoryRoot: codexMemoryRoot(), Documents: docs, Memories: memories, CodexMemories: codexMemories, MCPServers: servers, Diagnostics: diagnostics}, nil
 }
 
 func selectedTargetMust() string {
@@ -372,52 +324,89 @@ func (a *App) WriteRuntimeDocument(path, content string) error {
 	return atomicWrite(path, []byte(content))
 }
 
+// ReadMemory returns any memory file the user may inspect: shared vault notes are
+// editable, Codex-owned files are read-only.
 func (a *App) ReadMemory(path string) (string, error) {
-	if !memoryPathAllowed(path) {
-		return "", errors.New("只能读取已识别的记忆文件")
+	path = filepath.Clean(path)
+	if !memoryReadAllowed(path) {
+		return "", errors.New("只能读取共享记忆或 Codex 记忆目录中的文件")
 	}
 	if !regularRuntimeFile(path) {
 		return "", errors.New("记忆文件必须是普通文件")
 	}
-	data, err := os.ReadFile(filepath.Clean(path))
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}
 	return string(data), err
 }
 
-func (a *App) CreateMemory(name, content string) (MemoryEntry, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return MemoryEntry{}, errors.New("请输入记忆名称")
-	}
-	if len([]rune(name)) > 100 || strings.ContainsAny(name, `/\\\x00\r\n`) {
-		return MemoryEntry{}, errors.New("记忆名称不合法")
-	}
-	if !strings.HasSuffix(strings.ToLower(name), ".md") {
-		name += ".md"
-	}
-	root := filepath.Join(codexHome(), "memories")
-	path := filepath.Join(root, name)
-	if _, err := os.Stat(path); err == nil {
-		return MemoryEntry{}, errors.New("同名记忆已存在")
+// CreateMemory stores a new note in the shared vault.  scope is "global" or
+// "project"; project notes live in a folder keyed by the workspace path so two
+// projects never overwrite each other.
+func (a *App) CreateMemory(name, content, scope string) (MemoryEntry, error) {
+	cleaned, err := cleanMemoryName(name)
+	if err != nil {
+		return MemoryEntry{}, err
 	}
 	if len(content) > 256<<10 {
 		return MemoryEntry{}, errors.New("记忆不能超过 256 KiB")
 	}
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		scope = memoryScopeGlobal
+	}
+	projectID := ""
+	directory := ""
+	switch scope {
+	case memoryScopeGlobal:
+		directory = memoryVaultGlobalDir()
+	case memoryScopeProject:
+		project, workspaceErr := selectedWorkspace()
+		if workspaceErr != nil || project.Path == "" {
+			return MemoryEntry{}, errors.New("请先选择项目工作区，再创建项目记忆")
+		}
+		projectID = memoryProjectID(project.Path)
+		directory = memoryProjectDir(project.Path)
+	default:
+		return MemoryEntry{}, errors.New("记忆范围无效")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := ensureMemoryVaultDirs(directory); err != nil {
+		return MemoryEntry{}, err
+	}
+	path := filepath.Join(directory, cleaned)
+	if !memoryVaultAllowed(path) {
+		return MemoryEntry{}, errors.New("共享记忆之外的文件不能创建")
+	}
+	if _, err := os.Stat(path); err == nil {
+		return MemoryEntry{}, errors.New("同名记忆已存在")
+	}
 	if err := atomicWrite(path, []byte(content)); err != nil {
 		return MemoryEntry{}, err
+	}
+	if err := refreshMemoryVaultIndex(); err != nil {
+		return MemoryEntry{}, fmt.Errorf("记忆已保存，但索引更新失败: %w", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return MemoryEntry{}, err
 	}
-	return MemoryEntry{ID: path, Name: name, Scope: "global", Path: path, Bytes: info.Size(), ModifiedAt: info.ModTime().Format(time.RFC3339)}, nil
+	title, tags, projectLabel := parseMemoryFrontMatter(content)
+	if title == "" {
+		title = strings.TrimSuffix(cleaned, filepath.Ext(cleaned))
+	}
+	if projectLabel == "" {
+		projectLabel = projectID
+	}
+	return MemoryEntry{ID: path, Name: cleaned, Title: title, Scope: scope, Origin: "vault", Project: projectLabel, ProjectID: projectID, Tags: tags, Path: path, Bytes: info.Size(), ModifiedAt: info.ModTime().Format(time.RFC3339)}, nil
 }
 
 func (a *App) WriteMemory(path, content string) error {
-	if !memoryPathAllowed(path) {
-		return errors.New("只能编辑已识别的记忆文件")
+	path = filepath.Clean(path)
+	if !memoryVaultAllowed(path) {
+		return errors.New("共享记忆之外的文件不能修改")
 	}
 	if len(content) > 256<<10 {
 		return errors.New("记忆不能超过 256 KiB")
@@ -431,16 +420,22 @@ func (a *App) WriteMemory(path, content string) error {
 	if err != nil {
 		return err
 	}
-	backup := filepath.Join(filepath.Dir(dataPath()), "backups", "memories", time.Now().Format("20060102-150405.000000000")+"-"+filepath.Base(path))
-	if err := atomicWrite(backup, original); err != nil {
+	if err := atomicWrite(memoryBackupPath(path, "writes"), original); err != nil {
 		return fmt.Errorf("备份记忆失败，未写入: %w", err)
 	}
-	return atomicWrite(path, []byte(content))
+	if err := atomicWrite(path, []byte(content)); err != nil {
+		return err
+	}
+	if err := refreshMemoryVaultIndex(); err != nil {
+		return fmt.Errorf("记忆已保存，但索引更新失败: %w", err)
+	}
+	return nil
 }
 
 func (a *App) DeleteMemory(path string) error {
-	if !memoryPathAllowed(path) {
-		return errors.New("只能删除已识别的记忆文件")
+	path = filepath.Clean(path)
+	if !memoryVaultAllowed(path) {
+		return errors.New("共享记忆之外的文件不能删除")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -451,11 +446,16 @@ func (a *App) DeleteMemory(path string) error {
 	if err != nil {
 		return err
 	}
-	trash := filepath.Join(filepath.Dir(dataPath()), "backups", "memories", "trash", time.Now().Format("20060102-150405.000000000")+"-"+filepath.Base(path))
-	if err := atomicWrite(trash, data); err != nil {
+	if err := atomicWrite(memoryBackupPath(path, filepath.Join("writes", "trash")), data); err != nil {
 		return fmt.Errorf("备份记忆失败，未删除: %w", err)
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	if err := refreshMemoryVaultIndex(); err != nil {
+		return fmt.Errorf("记忆已删除，但索引更新失败: %w", err)
+	}
+	return nil
 }
 
 func (a *App) OpenAdvancedDirectory(kind string) error {
@@ -466,7 +466,12 @@ func (a *App) OpenAdvancedDirectory(kind string) error {
 	case "pi":
 		path = piRoot()
 	case "memory":
-		path = filepath.Join(codexHome(), "memories")
+		if err := ensureMemoryVaultDirs(); err != nil {
+			return err
+		}
+		path = memoryVaultRoot()
+	case "codex-memory":
+		path = codexMemoryRoot()
 	default:
 		return errors.New("目录类型无效")
 	}

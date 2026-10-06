@@ -252,6 +252,9 @@ func (a *App) LoadAdvancedState() (AdvancedState, error) {
 		return AdvancedState{}, err
 	}
 	servers, diagnostics := loadMCPServers(docs)
+	if err := ensurePiMemoryBridge(); err != nil {
+		diagnostics = append(diagnostics, "pi 共享记忆自动加载配置失败: "+err.Error())
+	}
 	return AdvancedState{Target: target, CodexHome: codexHome(), PiHome: piRoot(), MemoryVault: memoryVaultRoot(), CurrentProjectID: memoryProjectID(project.Path), CodexMemoryRoot: codexMemoryRoot(), Documents: docs, Memories: memories, CodexMemories: codexMemories, MCPServers: servers, Diagnostics: diagnostics}, nil
 }
 
@@ -387,7 +390,7 @@ func (a *App) CreateMemory(name, content, scope string) (MemoryEntry, error) {
 		return MemoryEntry{}, err
 	}
 	if err := refreshMemoryVaultIndex(); err != nil {
-		return MemoryEntry{}, fmt.Errorf("记忆已保存，但索引更新失败: %w", err)
+		return MemoryEntry{}, fmt.Errorf("记忆已保存，但索引或 pi 自动加载配置更新失败: %w", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -427,7 +430,7 @@ func (a *App) WriteMemory(path, content string) error {
 		return err
 	}
 	if err := refreshMemoryVaultIndex(); err != nil {
-		return fmt.Errorf("记忆已保存，但索引更新失败: %w", err)
+		return fmt.Errorf("记忆已保存，但索引或 pi 自动加载配置更新失败: %w", err)
 	}
 	return nil
 }
@@ -453,7 +456,7 @@ func (a *App) DeleteMemory(path string) error {
 		return err
 	}
 	if err := refreshMemoryVaultIndex(); err != nil {
-		return fmt.Errorf("记忆已删除，但索引更新失败: %w", err)
+		return fmt.Errorf("记忆已删除，但索引或 pi 自动加载配置更新失败: %w", err)
 	}
 	return nil
 }

@@ -22,9 +22,19 @@ import (
 )
 
 type App struct {
-	ctx    context.Context
-	mu     sync.Mutex
-	window windowMemory
+	ctx             context.Context
+	mu              sync.Mutex
+	window          windowMemory
+	chatMu          sync.Mutex
+	chatID          string
+	chatCancel      context.CancelFunc
+	chatEmit        func(PiChatEvent)
+	piRuntimeMu     sync.Mutex
+	piRuntimeOpenMu sync.Mutex
+	piRuntime       *piChatWorker
+	piRuntimeEmit   func(PiChatRuntimeEvent)
+	dependencyMu    sync.Mutex
+	dependencyJob   DependencyInstallState
 }
 type Model struct {
 	ID             string `json:"id"`

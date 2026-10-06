@@ -153,6 +153,21 @@ button svg { flex-shrink: 0; }
 .model-test-markdown pre code { padding: 0; color: var(--text); background: transparent; white-space: pre; }
 .model-test-markdown blockquote { margin: 0 0 12px; padding: 4px 12px; border-left: 3px solid var(--accent); color: var(--secondary); }
 .model-test-markdown a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.model-test-markdown hr { margin: 20px 0; border: 0; border-top: 1px solid var(--divider); }
+.model-test-markdown li > ul, .model-test-markdown li > ol { margin-top: 6px; margin-bottom: 6px; }
+.model-test-markdown img { max-width: 100%; height: auto; border-radius: 8px; }
+.model-test-markdown .response-table { max-width: 100%; margin: 16px 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+.model-test-markdown table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.model-test-markdown th, .model-test-markdown td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--divider); }
+.model-test-markdown th { font-weight: 600; background: var(--surface-soft); }
+.model-test-markdown tr:last-child td { border-bottom: 0; }
+.model-test-markdown .response-code { max-width: 100%; margin: 16px 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); }
+.model-test-markdown .response-code-head { padding: 10px 16px; border-bottom: 1px solid var(--divider); color: var(--secondary); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-test-markdown .response-code pre { margin: 0; padding: 16px; border: 0; border-radius: 0; background: transparent; }
+.model-test-markdown .response-code code { font: 12px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-test-markdown .json-key { color: var(--accent); }
+.model-test-markdown .json-string { color: var(--success); }
+.model-test-markdown .json-number, .model-test-markdown .json-literal { color: var(--text); font-weight: 600; }
 .model-test-empty { margin-top: 18px; padding: 14px 16px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; flex-shrink: 0; min-height: 40px; padding: 10px 15px; border: 1px solid transparent; border-radius: 8px; font-size: 12px; line-height: 1.5; font-weight: 600; }
 .button-primary { color: #fff; background: #087d92; border-color: #087d92; }
@@ -304,6 +319,28 @@ code { color: var(--secondary); font: 11px/1.7 ui-monospace, SFMono-Regular, Con
 .cli-card code { width: 100%; padding: 16px; border-radius: 8px; background: var(--surface-soft); line-height: 1.8; }
 .cli-error { color: var(--secondary); font-size: 12px; line-height: 1.7; }
 .cli-card .button { margin-top: auto; }
+.environment-panel { margin-bottom: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.environment-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px; padding-bottom: 22px; margin-bottom: 22px; border-bottom: 1px solid var(--divider); }
+.environment-heading h3 { font-size: 18px; line-height: 1.5; }
+.environment-heading p, .environment-note, .environment-location { color: var(--secondary); font-size: 12px; line-height: 1.8; }
+.environment-heading p { margin-top: 7px; }
+.environment-heading .button, .dependency-card .button { min-height: 44px; }
+.environment-note { margin-bottom: 20px; }
+.dependency-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.dependency-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 10px; }
+.dependency-card-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; width: 100%; }
+.dependency-version { color: var(--secondary); font-size: 12px; }
+.dependency-card code { max-width: 100%; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.dependency-card .button { margin-top: auto; }
+.environment-location { margin-top: 20px; }
+.environment-location code { display: block; overflow-wrap: anywhere; }
+.dependency-progress { display: grid; gap: 14px; padding: 20px; margin-top: 20px; border-radius: 10px; background: var(--surface-soft); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.dependency-progress > div { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.dependency-progress progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.dependency-progress .button { justify-self: start; }
+.environment-notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--accent-border); border-radius: 10px; background: var(--accent-soft); font-size: 12px; line-height: 1.7; }
+.environment-notice .text-button { min-height: 32px; }
+@container (max-width: 540px) { .dependency-grid { grid-template-columns: minmax(0, 1fr); } .environment-panel { padding: 20px; } }
 /* Native WebKit select controls need an explicit appearance and height. */
 .target-select select, .field select, .skill-sort select { appearance: none; -webkit-appearance: none; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
 .target-select select { height: 40px; }

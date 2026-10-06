@@ -10,6 +10,10 @@ export function ActivateProfile(arg1) {
   return window['go']['main']['App']['ActivateProfile'](arg1);
 }
 
+export function CancelPiChat(arg1) {
+  return window['go']['main']['App']['CancelPiChat'](arg1);
+}
+
 export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
@@ -28,6 +32,10 @@ export function ChooseWorkspaceDirectory(arg1) {
 
 export function CleanSkills(arg1) {
   return window['go']['main']['App']['CleanSkills'](arg1);
+}
+
+export function ClosePiChatRuntime(arg1) {
+  return window['go']['main']['App']['ClosePiChatRuntime'](arg1);
 }
 
 export function CreateMemory(arg1, arg2, arg3) {
@@ -50,8 +58,16 @@ export function DeleteWorkspace(arg1) {
   return window['go']['main']['App']['DeleteWorkspace'](arg1);
 }
 
+export function DetectEnvironment() {
+  return window['go']['main']['App']['DetectEnvironment']();
+}
+
 export function FetchModels(arg1) {
   return window['go']['main']['App']['FetchModels'](arg1);
+}
+
+export function GetDependencyInstallState() {
+  return window['go']['main']['App']['GetDependencyInstallState']();
 }
 
 export function InstallSkill(arg1) {
@@ -90,6 +106,10 @@ export function LoadLocalSkillsState() {
   return window['go']['main']['App']['LoadLocalSkillsState']();
 }
 
+export function LoadPiChatConfig() {
+  return window['go']['main']['App']['LoadPiChatConfig']();
+}
+
 export function LoadSharedSkillsState() {
   return window['go']['main']['App']['LoadSharedSkillsState']();
 }
@@ -122,12 +142,20 @@ export function OpenConfigFolder() {
   return window['go']['main']['App']['OpenConfigFolder']();
 }
 
+export function OpenPiChatRuntime(arg1, arg2) {
+  return window['go']['main']['App']['OpenPiChatRuntime'](arg1, arg2);
+}
+
 export function OpenSharedSkillsDirectory() {
   return window['go']['main']['App']['OpenSharedSkillsDirectory']();
 }
 
 export function OpenWorkspaceDirectory() {
   return window['go']['main']['App']['OpenWorkspaceDirectory']();
+}
+
+export function PiChatRuntimeCommand(arg1, arg2) {
+  return window['go']['main']['App']['PiChatRuntimeCommand'](arg1, arg2);
 }
 
 export function ReadAgentDocument(arg1) {
@@ -140,6 +168,10 @@ export function ReadConfigText() {
 
 export function ReadMemory(arg1) {
   return window['go']['main']['App']['ReadMemory'](arg1);
+}
+
+export function ReadPiChatClipboardFiles() {
+  return window['go']['main']['App']['ReadPiChatClipboardFiles']();
 }
 
 export function ReadRuntimeDocument(arg1) {
@@ -172,6 +204,14 @@ export function SetChatGPTPath(arg1) {
 
 export function SetTarget(arg1) {
   return window['go']['main']['App']['SetTarget'](arg1);
+}
+
+export function StartDependencyInstall(arg1) {
+  return window['go']['main']['App']['StartDependencyInstall'](arg1);
+}
+
+export function StartPiChat(arg1) {
+  return window['go']['main']['App']['StartPiChat'](arg1);
 }
 
 export function StartUpdate() {

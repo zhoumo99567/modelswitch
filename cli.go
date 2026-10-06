@@ -41,6 +41,9 @@ func resolveCLI(id string) (string, error) {
 	if _, err := cliName(id); err != nil {
 		return "", err
 	}
+	if file := toolInDirectory(managedNpmBin(), id); file != "" {
+		return file, nil
+	}
 	if file, err := exec.LookPath(id); err == nil {
 		return filepath.Abs(file)
 	}
@@ -148,6 +151,11 @@ func (a *App) LaunchCLI(id, directory string) error {
 	if err != nil {
 		return err
 	}
+	if id == "pi" {
+		if err = ensurePiMemoryBridge(); err != nil {
+			return fmt.Errorf("配置 pi 共享记忆失败：%w", err)
+		}
+	}
 	if err = launchCLIInTerminal(path, directory); err != nil {
 		return fmt.Errorf("启动 CLI 失败：%w", err)
 	}
@@ -155,5 +163,5 @@ func (a *App) LaunchCLI(id, directory string) error {
 }
 func quoteCLIShell(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 func cliShellScript(path, directory string) string {
-	return "export PATH=" + quoteCLIShell(filepath.Dir(path)) + ":\"$PATH\"; cd -- " + quoteCLIShell(directory) + " && " + quoteCLIShell(path)
+	return "export PATH=" + quoteCLIShell(dependencyPathPrefix(path)) + ":\"$PATH\"; cd -- " + quoteCLIShell(directory) + " && " + quoteCLIShell(path)
 }

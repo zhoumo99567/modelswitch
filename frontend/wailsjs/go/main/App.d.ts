@@ -6,6 +6,8 @@ export function ActivateOpenAI():Promise<main.AppState>;
 
 export function ActivateProfile(arg1:string):Promise<main.AppState>;
 
+export function CancelPiChat(arg1:string):Promise<void>;
+
 export function CheckForUpdate():Promise<main.UpdateInfo>;
 
 export function ChooseCLIDirectory(arg1:string):Promise<string>;
@@ -15,6 +17,8 @@ export function ChooseChatGPTPath():Promise<main.AppState>;
 export function ChooseWorkspaceDirectory(arg1:string):Promise<string>;
 
 export function CleanSkills(arg1:Array<string>):Promise<Array<main.SkillInfo>>;
+
+export function ClosePiChatRuntime(arg1:string):Promise<void>;
 
 export function CreateMemory(arg1:string,arg2:string,arg3:string):Promise<main.MemoryEntry>;
 
@@ -26,7 +30,11 @@ export function DeleteSkill(arg1:string):Promise<Array<main.SkillInfo>>;
 
 export function DeleteWorkspace(arg1:string):Promise<main.WorkspaceState>;
 
+export function DetectEnvironment():Promise<main.EnvironmentState>;
+
 export function FetchModels(arg1:main.ProfileInput):Promise<Array<main.Model>>;
+
+export function GetDependencyInstallState():Promise<main.DependencyInstallState>;
 
 export function InstallSkill(arg1:string):Promise<Array<main.SkillInfo>>;
 
@@ -46,6 +54,8 @@ export function LoadCLIState():Promise<main.CLIState>;
 
 export function LoadLocalSkillsState():Promise<main.SkillsState>;
 
+export function LoadPiChatConfig():Promise<main.PiChatConfig>;
+
 export function LoadSharedSkillsState():Promise<main.SkillsState>;
 
 export function LoadSkillMarketMetrics(arg1:string):Promise<main.SkillMarketMetrics>;
@@ -62,15 +72,21 @@ export function OpenCodexDirectory():Promise<void>;
 
 export function OpenConfigFolder():Promise<void>;
 
+export function OpenPiChatRuntime(arg1:string,arg2:string):Promise<main.PiChatRuntimeInfo>;
+
 export function OpenSharedSkillsDirectory():Promise<void>;
 
 export function OpenWorkspaceDirectory():Promise<void>;
+
+export function PiChatRuntimeCommand(arg1:string,arg2:string):Promise<void>;
 
 export function ReadAgentDocument(arg1:string):Promise<string>;
 
 export function ReadConfigText():Promise<string>;
 
 export function ReadMemory(arg1:string):Promise<string>;
+
+export function ReadPiChatClipboardFiles():Promise<main.PiChatClipboard>;
 
 export function ReadRuntimeDocument(arg1:string):Promise<string>;
 
@@ -87,6 +103,10 @@ export function SelectWorkspace(arg1:string):Promise<main.WorkspaceState>;
 export function SetChatGPTPath(arg1:string):Promise<main.AppState>;
 
 export function SetTarget(arg1:string):Promise<main.AppState>;
+
+export function StartDependencyInstall(arg1:string):Promise<main.DependencyInstallState>;
+
+export function StartPiChat(arg1:main.PiChatRequest):Promise<void>;
 
 export function StartUpdate():Promise<main.UpdateInfo>;
 

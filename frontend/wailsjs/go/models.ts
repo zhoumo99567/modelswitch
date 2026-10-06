@@ -437,6 +437,90 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class DependencyInfo {
+	    id: string;
+	    name: string;
+	    path: string;
+	    version: string;
+	    installed: boolean;
+	    ready: boolean;
+	    managed: boolean;
+	    error: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DependencyInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.version = source["version"];
+	        this.installed = source["installed"];
+	        this.ready = source["ready"];
+	        this.managed = source["managed"];
+	        this.error = source["error"];
+	    }
+	}
+	export class DependencyInstallState {
+	    id: string;
+	    status: string;
+	    message: string;
+	    progress: number;
+	    error: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DependencyInstallState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	        this.progress = source["progress"];
+	        this.error = source["error"];
+	    }
+	}
+	export class EnvironmentState {
+	    platform: string;
+	    architecture: string;
+	    installDirectory: string;
+	    nodeInstallMethod: string;
+	    tools: DependencyInfo[];
+
+	    static createFrom(source: any = {}) {
+	        return new EnvironmentState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.architecture = source["architecture"];
+	        this.installDirectory = source["installDirectory"];
+	        this.nodeInstallMethod = source["nodeInstallMethod"];
+	        this.tools = this.convertValues(source["tools"], DependencyInfo);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 
 
@@ -456,6 +540,146 @@ export namespace main {
 	        this.protocol = source["protocol"];
 	    }
 	}
+	export class PiChatClipboardFile {
+	    name: string;
+	    type: string;
+	    data: number[];
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatClipboardFile(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.data = source["data"];
+	    }
+	}
+	export class PiChatClipboard {
+	    files: PiChatClipboardFile[];
+	    errors: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatClipboard(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.files = this.convertValues(source["files"], PiChatClipboardFile);
+	        this.errors = source["errors"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class PiChatConfig {
+	    id: string;
+	    profileId: string;
+	    profileName: string;
+	    baseUrl: string;
+	    model: number[];
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.profileId = source["profileId"];
+	        this.profileName = source["profileName"];
+	        this.baseUrl = source["baseUrl"];
+	        this.model = source["model"];
+	    }
+	}
+	export class PiChatRequest {
+	    id: string;
+	    configId: string;
+	    body: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.configId = source["configId"];
+	        this.body = source["body"];
+	    }
+	}
+	export class PiChatRuntimeResource {
+	    name: string;
+	    path: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatRuntimeResource(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	    }
+	}
+	export class PiChatRuntimeInfo {
+	    cwd: string;
+	    agentDir: string;
+	    skills: PiChatRuntimeResource[];
+	    extensions: string[];
+	    tools: string[];
+	    diagnostics: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new PiChatRuntimeInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cwd = source["cwd"];
+	        this.agentDir = source["agentDir"];
+	        this.skills = this.convertValues(source["skills"], PiChatRuntimeResource);
+	        this.extensions = source["extensions"];
+	        this.tools = source["tools"];
+	        this.diagnostics = source["diagnostics"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
 	export class ProfileInput {
 	    id: string;
 	    name: string;

@@ -16,9 +16,11 @@
 
 窗口会记住上次正常关闭时的位置与大小。启动时按当前显示器的可用区域校验，窗口完整可见才恢复；显示器断开、分辨率变小或位置越界时，回到默认 1120 × 760 大小并居中（小屏幕会缩小到可用区域）。最大化、全屏或最小化时关闭，保留最近的普通窗口尺寸。窗口状态独立保存在用户配置目录的 `ModelSwitcher/window-state.json`，不跟随便携模型配置分发。
 
-左侧“CLI 启动器”提供 Codex CLI 和 pi CLI 入口，显示检测到的命令路径。可以填写或选择工作目录，启动后在 macOS Terminal / Windows PowerShell 的独立窗口中运行对应 CLI；目录保存在本机。只启动已安装的 CLI，不自动安装。macOS 同时检查 PATH、常见安装目录、登录 shell 和 ChatGPT 附带的 Codex 命令。
+左侧“CLI 启动器”提供 Codex CLI 和 pi CLI 入口，显示检测到的命令路径。可以填写或选择工作目录，启动后在 macOS Terminal / Windows PowerShell 的独立窗口中运行对应 CLI；目录保存在本机。启动时会自动检测 Node.js、npm、pi agent 和 Codex CLI；缺失或版本不兼容时，可以在启动器的“环境检测与安装”区域点击安装或修复。Node.js/npm 按平台安装：Windows 优先使用 winget 的 `OpenJS.NodeJS.LTS`，macOS 优先使用已有 Homebrew 的 `node@24`；包管理器不存在、安装失败或安装后检测不通过时，回退到当前用户的 `ModelSwitcher/tools` 目录下载官方兼容 LTS 安装包，并按官方 SHA-256 清单校验。系统包管理器可能请求系统授权；用户目录回退不需要管理员权限，也不要求先安装 Homebrew 或 winget。npm 随 Node.js 一起安装；pi/Codex 的 npm 全局 prefix 位于当前用户目录。安装 pi/Codex 会先补齐 Node.js/npm，再从官方 npm registry 安装（pi 使用兼容当前内置对话的 1.x，Codex 使用最新稳定版）。安装有进度、失败原因和重试入口，完成后自动检测；从本工具启动 CLI 和内置 pi 对话会自动使用这些路径。用户目录回退及 npm prefix 不会写入系统 PATH；若在其他终端直接使用命令，需要自行把界面显示的 Node.js 与 npm bin 目录加入 PATH。macOS 同时检查 PATH、常见安装目录、登录 shell 和 ChatGPT 附带的 Codex 命令。
 
-左侧“高级设置”提供三组共享配置：记忆管理扫描 Codex 的 `~/.codex/memories` 和当前工作区的 `.codex/memories`，编辑、创建和删除都会保留备份；MCP 配置同时识别 Codex `config.toml` 中的 `[mcp_servers.*]` 与 pi agent 兼容版本的 `mcp.json`，展示服务器来源、命令、端点和启用状态；运行参数可以编辑 pi `settings.json` 或 Codex `config.toml`，写入前按 JSON/JSONC 或 TOML 校验并自动备份。当前 pi 版本如果没有启用 `mcp.json`，页面会显示文件未创建，不会替用户开启不受支持的配置。
+左侧“高级设置”提供三组共享配置：记忆管理使用 `~/.agents/memory` 共享记忆库，全局记忆保存在 `global/`，项目记忆按工作区路径分目录保存在 `projects/`，`INDEX.md` 自动生成；Codex 的 `~/.codex/memories` 只读展示，可以提炼到共享记忆。编辑和删除共享记忆前都会保留备份。MCP 配置同时识别 Codex `config.toml` 中的 `[mcp_servers.*]` 与 pi agent 兼容版本的 `mcp.json`，展示服务器来源、命令、端点和启用状态；运行参数可以编辑 pi `settings.json` 或 Codex `config.toml`，写入前按 JSON/JSONC 或 TOML 校验并自动备份。当前 pi 版本如果没有启用 `mcp.json`，页面会显示文件未创建，不会替用户开启不受支持的配置。
+
+创建、修改或删除共享记忆，以及打开高级设置或从启动器启动 pi CLI 时，工具会自动安装 `PI_CODING_AGENT_DIR/extensions/model-switcher-memory.js`（默认 `~/.pi/agent/extensions/`）。扩展在每次提问前读取全局记忆及 CLI 当前目录和父目录对应的项目记忆，优先加载 `soul.md` 中的名字和身份，不会混入其他项目的记忆；直接运行 `pi` 也适用。已有 Pi 会话首次接入后执行 `/reload`，之后记忆修改或删除在下次提问时生效。关闭扩展加载（例如 `--no-extensions`）会关闭此功能。记忆正文总读取量限于 64 KiB，单条最多读取 16 KiB，超出时提示代理按路径读取完整内容。工具保留用户已有的 `AGENTS.md`、`SYSTEM.md`、`APPEND_SYSTEM.md` 和 settings；Codex 仍需在全局指令中指向共享索引。
 
 设置中的“更新管理”默认跳过检查，因为当前没有配置更新源。部署 S3 后可通过环境变量 `MODELSWITCHER_UPDATE_URL` 指向清单，例如：`{"version":"0.2.0","windows":{"url":"https://.../ModelSwitcher.exe","sha256":"..."},"macos":{"url":"https://.../ModelSwitcher.app.zip","sha256":"..."}}`。下载后会校验 SHA-256；清单提供 `signature` 时，还会使用 `MODELSWITCHER_UPDATE_PUBLIC_KEY` 校验 Ed25519 签名。Windows 使用独立更新助手替换并重启 exe，macOS 替换并重新打开整个 app 包。
 
@@ -32,9 +34,17 @@
 
 用于 ChatGPT / Codex 的服务还需要兼容 /v1/responses；仅支持 /v1/chat/completions 时需要协议转换代理。pi agent 使用 /v1/chat/completions。
 
+选择顶部的“pi agent”后，左侧显示“对话”。页面通过本机 pi CLI 的 `@earendil-works/pi-coding-agent` SDK 运行完整 AgentSession，内部使用 `pi-agent-core` 管理多轮上下文。采用类似 ChatGPT 的消息区与底部输入框，支持 Markdown 回复、实时流式显示、停止生成和新对话。先在模型设置中“应用到 pi agent”，聊天即可使用实际 `settings.json` / `models.json` 中的当前模型、服务地址和凭据；也可在聊天页直接切换已保存的配置，切换后自动开始新对话。当前支持 OpenAI Chat Completions 和 Responses 协议。Enter 发送，Shift + Enter 换行，中文输入法确认候选词不会误发送。对话使用内存会话，不写入 pi CLI 会话记录；凭据仅通过 Go 到 Node.js 的私有管道传递，不进入前端或命令行参数。内置对话需要已安装的 pi CLI 1.x npm 包和兼容的 Node.js（pi 1.x 要求 22.19 或更高版本）；可以在“CLI 启动器 → 环境检测与安装”中安装或修复这些依赖；启动时只检测，不会自动下载安装。
+
+进入对话时默认使用 Pi 的 `DefaultResourceLoader` 加载 `PI_CODING_AGENT_DIR`（默认 `~/.pi/agent/`）中的全局 skills、extensions、提示词及 settings 中配置的资源和 packages，遵循 Pi 的启用、排除和冲突规则。工作目录默认为用户主目录。扩展的 `session_start`、`before_agent_start`、输入处理、工具调用和其他生命周期钩子实际执行，注册的工具可由模型调用；CLI 内置的 MCP、codemode 和 tool_search 扩展也按当前 Pi SDK 和全局设置加载。已配置共享记忆库时自动加载记忆桥，记忆修改在下次提问前读取。页面底部可查看加载的 skills、extensions、工具及错误，工具调用显示执行状态。支持 `/skill:名称`、扩展命令及 `/reload`；新增或修改资源可通过 `/reload` 重新加载。支持扩展的确认、输入、选择、多行编辑、通知、状态和文本小组件；终端专用 TUI 组件和 CLI 历史会话切换、分支操作需在 pi CLI 中使用。
+
+输入框支持粘贴截图、图片及文件，也可以拖入文件或点击附件按钮选择。Windows 资源管理器复制的文件通过系统剪贴板读取。发送前显示附件预览并可逐个移除；只发送附件也可以，失败或停止后保留草稿方便重试。PNG、JPEG、WebP、GIF 使用模型原生图像输入，需要在模型设置中开启“支持图像输入”并应用；文本和代码文件、PDF、DOCX 在本机提取正文后随消息发送。不支持扫描 PDF 的 OCR 或其他二进制文件，扫描文档可粘贴页面截图。每条消息最多 8 个附件，单个不超过 8 MB，合计不超过 12 MB；每个文件最多提取 120,000 字符，PDF 最多读取前 100 页，截取时会在预览中提示。对话请求（含历史图片）总大小限制为 32 MB，超出时可减少附件或开启新对话。
+
+模型生成中仍可输入、粘贴附件并发送，后续消息默认加入队列，显示在输入框上方；前端保留可编辑队列，等待 Pi AgentSession 完成后按顺序逐条提交，每条输入均经过扩展输入处理和提问钩子。点击某条消息的“引导”会中断当前生成，保留已有上下文和部分回答，并优先处理该条消息，其余消息继续排队。队列支持删除、“更多 → 编辑消息”和移到队首；编辑时暂时暂停队列，原输入框草稿及附件保持不变。停止生成或请求失败后队列暂停，可点击“继续发送”；失败的当前消息恢复为草稿，已有新草稿时则放回暂停队列。配置变化后保留未完成及待发送消息并暂停，确认新配置后可继续；“新对话”清空队列。最多保留 20 条待发送消息。每次交接会等待 Pi 的运行或停止完成，避免连续发送或立即引导时发生重叠请求。
+
 开发命令：`npm --prefix frontend install`；`wails dev`。当前 Wails CLI 与 Go 1.27 的绑定生成存在兼容问题时，使用 `GOTOOLCHAIN=go1.23.12 wails dev`。
 
-验证：`go test -race ./...`、`npm --prefix frontend run build`。可选真实市场测试：`MODELSWITCHER_LIVE_TEST=1 go test -run TestLiveSkillMarkets -v`；同时设置 `MODELSWITCHER_LIVE_INSTALL_TEST=1` 可在临时目录验证实际下载与安装。
+验证：`go test -race ./...`、`npm --prefix frontend test`、`npm --prefix frontend run build`。前端测试覆盖附件解析、pi-agent-core 队列/引导和 Wails 传输交接。可选真实依赖安装测试：`MODELSWITCHER_LIVE_DEPENDENCY_TEST=1 go test -run TestLiveDependencyInstallation -v`，在临时用户目录下载、校验并安装 Node.js/npm、pi 和 Codex，验证可运行后清理。可选真实市场测试：`MODELSWITCHER_LIVE_TEST=1 go test -run TestLiveSkillMarkets -v`；同时设置 `MODELSWITCHER_LIVE_INSTALL_TEST=1` 可在临时目录验证实际下载与安装。
 
 Windows 发布命令：`pwsh ./scripts/release.ps1 -Version 0.2.0`。脚本会使用 `-X main.AppVersion=...` 注入版本号，生成 `release/0.2.0/ModelSwitcher-0.2.0-windows-amd64.exe` 和 `latest.json`。
 

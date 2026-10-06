@@ -1,9 +1,19 @@
 import './style.css';
 import './app.css';
+import { renderResponse as markdownHTML } from './response-format.mjs';
+import { createPiChat } from './pi-chat';
+import { createEnvironmentManager } from './environment-ui.mjs';
+import { DetectEnvironment, StartDependencyInstall, GetDependencyInstallState } from '../wailsjs/go/main/App';
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime';
 import { LoadCLIState, LaunchCLI, ChooseCLIDirectory, LoadSkillMarketMetrics, ActivateOpenAI, ActivateProfile, ChooseChatGPTPath, DeleteProfile, FetchModels, TestModel, LoadState, LoadLocalSkillsState, SearchSkills, CleanSkills, RestoreSkill, SetTarget, InstallSkill, InstallSkillTo, DeleteSkill, CheckForUpdate, StartUpdate, OpenCodexDirectory, ReadConfigText, SaveProfile, SetChatGPTPath, WriteConfigText, LoadWorkspaceState, ChooseWorkspaceDirectory, SaveWorkspace, SelectWorkspace, DeleteWorkspace, LoadAgentConfig, ReadAgentDocument, WriteAgentDocument, LoadSharedSkillsState, OpenWorkspaceDirectory, OpenSharedSkillsDirectory, LoadAdvancedState, ReadRuntimeDocument, WriteRuntimeDocument, ReadMemory, WriteMemory, CreateMemory, DeleteMemory, OpenAdvancedDirectory } from '../wailsjs/go/main/App';
 
 const paths = {
+ chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.3 9.3 0 0 1-4-.9L3 21l1.9-5A9.3 9.3 0 0 1 4 12a8.4 8.4 0 0 1 8.5-9H13a8.4 8.4 0 0 1 8 8Z"/>',
+ arrowUp: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
+ paperclip: '<path d="m21 11-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.9-2.9l8.5-8.5"/>',
+ steer: '<path d="M5 4v5a4 4 0 0 0 4 4h11m-5-5 5 5-5 5"/>',
+ more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+ stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
  route: '<circle cx="5" cy="7" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M7 7h3a4 4 0 0 1 4 4v4a4 4 0 0 0 3 4M10 7h1a4 4 0 0 0 4-2h2"/>',
  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
  star: '<path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.3l-5.6 3 1.1-6.3L3 9.6l6.2-.9Z"/>',
@@ -38,48 +48,6 @@ const paths = {
 };
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
-const inlineMarkdown = (value) => value
- .replace(/`([^`\n]+)`/g, '<code>$1</code>')
- .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
- .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
- .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
- .replace(/_([^_\n]+)_/g, '<em>$1</em>')
- .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-const markdownHTML = (value = '') => {
- const lines = String(value).replace(/\r\n?/g, '\n').split('\n');
- const output = [];
- let paragraph = [];
- let listType = '';
- let code = null;
- const closeParagraph = () => { if (paragraph.length) { output.push('<p>' + inlineMarkdown(paragraph.join('<br>')) + '</p>'); paragraph = []; } };
- const closeList = () => { if (listType) { output.push('</' + listType + '>'); listType = ''; } };
- for (const rawLine of lines) {
-  const line = esc(rawLine);
-  if (/^```/.test(line)) {
-   closeParagraph(); closeList();
-   if (code === null) { code = []; } else { output.push('<pre><code>' + code.join('\n') + '</code></pre>'); code = null; }
-   continue;
-  }
-  if (code !== null) { code.push(line); continue; }
-  if (!line.trim()) { closeParagraph(); closeList(); continue; }
-  const heading = line.match(/^(#{1,6})\s+(.+)$/);
-  if (heading) { closeParagraph(); closeList(); output.push('<h' + heading[1].length + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>'); continue; }
-  const unordered = line.match(/^[-*+]\s+(.+)$/);
-  const ordered = line.match(/^\d+[.)]\s+(.+)$/);
-  if (unordered || ordered) {
-   closeParagraph();
-   const nextType = ordered ? 'ol' : 'ul';
-   if (listType !== nextType) { closeList(); output.push('<' + nextType + '>'); listType = nextType; }
-   output.push('<li>' + inlineMarkdown((unordered || ordered)[1]) + '</li>');
-   continue;
-  }
-  if (/^&gt;\s?/.test(line)) { closeParagraph(); closeList(); output.push('<blockquote>' + inlineMarkdown(line.replace(/^&gt;\s?/, '')) + '</blockquote>'); continue; }
-  closeList(); paragraph.push(line);
- }
- if (code !== null) output.push('<pre><code>' + code.join('\n') + '</code></pre>');
- closeParagraph(); closeList();
- return output.join('');
-};
 const emptyDraft = () => ({ id: '', name: '', baseUrl: '', apiKey: '', selectedModel: '', models: [], clearApiKey: false, hasApiKey: false });
 let state = { version: '0.1.0', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
 let draft = emptyDraft();
@@ -123,8 +91,11 @@ let updateState = { status: 'unconfigured', message: '更新源未配置，已�
 let language = localStorage.getItem('model-switcher-language') || 'zh';
 let theme = localStorage.getItem('model-switcher-theme') || 'light';
 const app = document.querySelector('#app');
+const piChat = createPiChat({ redraw: render, getState: () => state, getLanguage: () => language, icon, esc, markdown: markdownHTML });
+const environment = createEnvironmentManager({ detect: DetectEnvironment, startInstall: StartDependencyInstall, getInstallState: GetDependencyInstallState, redraw: render, getLanguage: () => language, icon, esc, onInstalled: async () => { if (page === 'cli') { await refreshCLI(false); render(); } } });
 
 const zhToEn = {
+ '对话': 'Conversation', '与当前 pi 模型进行多轮对话，实时查看回复。': 'Chat with the current pi model and watch replies as they arrive.',
  'pi agent 使用': 'pi agent uses', '模型与代理工作台': 'Models & agents workspace', '配置位置': 'Configuration location', '模型连接': 'Model connection',
  'CLI 启动器': 'CLI launcher', '展开或折叠 CLI 启动器': 'Expand or collapse CLI launcher', '选择工作目录，启动对应的命令行代理。': 'Choose a working folder and launch a command-line agent.', '启动 CLI': 'Launch CLI', '在系统终端中打开 Codex 或 pi agent。': 'Open Codex or pi agent in your system terminal.', '重新检测': 'Detect again', '工作目录': 'Working folder', '选择项目所在文件夹': 'Choose your project folder', 'CLI 会在这个目录中启动。': 'The CLI starts in this folder.', '选择目录': 'Choose folder', '已检测到': 'Detected', '未安装或未找到': 'Not installed or not found', '正在检测 CLI…': 'Detecting CLIs…',
  '安装量': 'Installs', '仓库 Stars': 'Repository stars', '用户评分': 'User rating', '查看反馈': 'View feedback', '统计来源': 'Stats source', '获取中…': 'Loading…', '排序': 'Sort', '安装量优先': 'Most installed', '仓库热度优先': 'Most repository stars', '名称 A–Z': 'Name A–Z', '按市场': 'Market', '用户评分（未提供）': 'User rating (unavailable)', '正在加载市场': 'Loading markets', '市场加载完成': 'Markets loaded', '上一页': 'Previous', '下一页': 'Next', '技能分页': 'Skill pages', '描述': 'Description',
@@ -183,6 +154,9 @@ const zhToEn = {
  'Codex 记忆（只读）': 'Codex memory (read-only)', '提炼到共享记忆': 'Copy into shared memory', '保存位置': 'Stored in', '全局记忆（所有项目共用）': 'Global memory (shared by every project)',
  '这是代理自己生成的记忆，本应用只读；可复制内容后新建共享记忆。': 'The agent generated this memory, so it is read-only here. Copy the content into a new shared memory instead.',
  '全局记忆所有项目共用，项目记忆按项目分目录保存，两个代理都会读到同一份内容。': 'Global notes apply to every project; project notes live in a folder per project. Both agents read the same files.',
+ 'pi CLI 会在每次提问前自动加载全局记忆和当前项目记忆，soul.md 可用于设定名字和身份。': 'Pi CLI loads global and current project memories before each prompt. Use soul.md to define its name and identity.',
+ '已打开的 pi 会话请先执行 /reload，之后记忆修改会在下次提问时生效。': 'Run /reload once in an existing Pi session. Later memory edits take effect on the next prompt.',
+ 'Codex 需要在全局指令中指向共享记忆索引。': 'Point Codex global instructions at the shared memory index.',
  '例如：project-context.md': 'For example: project-context.md', '配置内容': 'Configuration content',
 };
 function translateText(text) {
@@ -208,7 +182,7 @@ function translateText(text) {
 function localizeDOM() {
  if (language !== 'en') return;
  const walk = (node) => {
-  if (node.nodeType === Node.ELEMENT_NODE && (node.closest('.skill-description, .skill-details dd, .skill-item-title strong') || node.tagName === 'TEXTAREA')) return;
+  if (node.nodeType === Node.ELEMENT_NODE && (node.closest('.skill-description, .skill-details dd, .skill-item-title strong, [data-no-translate]') || node.tagName === 'TEXTAREA')) return;
   if (node.nodeType === Node.TEXT_NODE) node.nodeValue = translateText(node.nodeValue);
   else node.childNodes.forEach(walk);
  };
@@ -321,9 +295,10 @@ async function refreshSkills() {
  skillsState=await LoadLocalSkillsState();
  selectedSkills=new Set([...selectedSkills].filter((name)=>skillsState.skills.some((s)=>s.name===name)));
 }
-async function refreshCLI() {
+async function refreshCLI(detectEnvironment = true) {
  cliState=await LoadCLIState(); if(!cliDirectory)cliDirectory=cliState.directory;
  selectedCLI=isPi()?'pi':'codex';
+ if (detectEnvironment) await environment.refresh();
 }
 async function refreshWorkspace() {
  workspaceState = await LoadWorkspaceState();
@@ -358,7 +333,7 @@ function renderAdvancedPage(disabled) {
  const docRows = docs.map((doc) => `<li class="advanced-list-row advanced-doc-row"><button class="advanced-list-main" data-advanced-doc="${esc(doc.path)}" ${disabled}><span class="advanced-list-icon">${icon(doc.kind.toLowerCase().includes('mcp') ? 'plug' : 'file', 16)}</span><span><strong>${esc(doc.kind)}</strong><small title="${esc(doc.path)}">${esc(doc.path)}</small></span></button><span class="skill-badge ${doc.exists ? '' : 'muted'}">${doc.exists ? '已创建' : '未创建'}</span></li>`).join('');
  const tab = (id, label, iconName) => `<button class="advanced-tab ${advancedSection === id ? 'active' : ''}" data-advanced-section="${id}" ${disabled}>${icon(iconName, 16)}${label}</button>`;
  let content = '';
- if (advancedSection === 'memory') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('brain', 18)}<h3>共享记忆库</h3></div><span class="muted-label">${vaultMemories.length} 个</span></div><p class="workspace-note">Codex 和 pi agent 共用这一个记忆库，新建和编辑都写在这里，索引会自动更新。</p><div class="advanced-toolbar"><code>${esc(advancedState.memoryVault || '正在读取…')}</code><button id="advanced-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button><button id="advanced-memory-new" class="button button-primary" ${disabled}>${icon('plus', 15)}新建记忆</button></div>${vaultGroups || '<div class="workspace-empty workspace-empty-large">还没有共享记忆，点击「新建记忆」写下第一条。</div>'}</section><section class="panel"><div class="panel-heading"><div>${icon('shield', 18)}<h3>Codex 原生记忆</h3></div><span class="skill-badge">只读</span></div><p class="workspace-note">Codex 自己写入的记忆，本应用只读。打开一条可以复制内容，再存成共享记忆。</p><ul class="advanced-list">${codexMemories.map(codexRow).join('') || '<li class="workspace-empty">Codex 还没有生成记忆。</li>'}</ul><div class="advanced-toolbar"><button id="advanced-codex-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button></div></section></div><section class="panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>共享记忆怎么用</h3></div></div><div class="advanced-note-list"><p>全局记忆所有项目共用，项目记忆按项目分目录保存，两个代理都会读到同一份内容。</p><p>索引文件由本应用自动生成，请勿手动编辑。<code>INDEX.md</code></p><p>要让代理自动加载，把它指向共享记忆索引。<code>~/.codex/AGENTS.md</code><code>~/.pi/agent/APPEND_SYSTEM.md</code><code>~/.agents/memory/INDEX.md</code></p><p>写入和删除前都会备份到应用数据目录。<code>backups/memories</code></p></div></section>`;
+ if (advancedSection === 'memory') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('brain', 18)}<h3>共享记忆库</h3></div><span class="muted-label">${vaultMemories.length} 个</span></div><p class="workspace-note">Codex 和 pi agent 共用这一个记忆库，新建和编辑都写在这里，索引会自动更新。</p><div class="advanced-toolbar"><code>${esc(advancedState.memoryVault || '正在读取…')}</code><button id="advanced-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button><button id="advanced-memory-new" class="button button-primary" ${disabled}>${icon('plus', 15)}新建记忆</button></div>${vaultGroups || '<div class="workspace-empty workspace-empty-large">还没有共享记忆，点击「新建记忆」写下第一条。</div>'}</section><section class="panel"><div class="panel-heading"><div>${icon('shield', 18)}<h3>Codex 原生记忆</h3></div><span class="skill-badge">只读</span></div><p class="workspace-note">Codex 自己写入的记忆，本应用只读。打开一条可以复制内容，再存成共享记忆。</p><ul class="advanced-list">${codexMemories.map(codexRow).join('') || '<li class="workspace-empty">Codex 还没有生成记忆。</li>'}</ul><div class="advanced-toolbar"><button id="advanced-codex-memory-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开目录</button></div></section></div><section class="panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>共享记忆怎么用</h3></div></div><div class="advanced-note-list"><p>全局记忆所有项目共用，项目记忆按项目分目录保存，两个代理都会读到同一份内容。</p><p>索引文件由本应用自动生成，请勿手动编辑。<code>INDEX.md</code></p>${isPi() ? '<p>pi CLI 会在每次提问前自动加载全局记忆和当前项目记忆，soul.md 可用于设定名字和身份。</p><p>已打开的 pi 会话请先执行 /reload，之后记忆修改会在下次提问时生效。</p>' : '<p>Codex 需要在全局指令中指向共享记忆索引。<code>~/.codex/AGENTS.md</code><code>~/.agents/memory/INDEX.md</code></p>'}<p>写入和删除前都会备份到应用数据目录。<code>backups/memories</code></p></div></section>`;
  if (advancedSection === 'mcp') content = `<div class="advanced-grid"><section class="panel"><div class="panel-heading"><div>${icon('plug', 18)}<h3>MCP 服务器</h3></div><span class="muted-label">${(advancedState.mcpServers || []).length} 个</span></div><p class="workspace-note">${isPi() ? 'pi agent 从 <code>mcp.json</code> 读取 MCP 配置。' : 'Codex 从 <code>config.toml</code> 和 <code>mcp.json</code> 读取 MCP 配置。'}这里先展示来源和启用状态，完整配置通过编辑器修改。</p><ul class="advanced-list">${serverRows || '<li class="workspace-empty">没有检测到 MCP 服务器。</li>'}</ul></section><section class="panel"><div class="panel-heading"><div>${icon('file', 18)}<h3>配置文件</h3></div></div><ul class="advanced-list">${docRows || '<li class="workspace-empty">没有配置文件。</li>'}</ul><div class="advanced-toolbar">${isPi() ? `<button id="advanced-pi-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 pi 目录</button>` : `<button id="advanced-codex-open" class="button button-secondary" ${disabled}>${icon('folder', 15)}打开 Codex 目录</button>`}</div></section></div>`;
  if (advancedSection === 'settings') content = `<section class="panel"><div class="panel-heading"><div>${icon('sliders', 18)}<h3>运行参数</h3></div><span class="skill-badge">${isPi() ? 'pi agent' : 'ChatGPT / Codex'}</span></div><p class="workspace-note">${isPi() ? 'pi settings 支持启动模型、思考级别、压缩、重试、图像、代理和终端显示设置。' : 'Codex 高级参数保存在 config.toml 中，可直接编辑并自动备份。'}</p><div class="advanced-settings-cards"><div class="advanced-setting-card"><strong>${isPi() ? 'pi settings.json' : 'Codex config.toml'}</strong><small>${esc(isPi() ? advancedState.piHome + '/settings.json' : advancedState.codexHome + '/config.toml')}</small><button class="button button-primary" data-advanced-doc="${esc(isPi() ? advancedState.piHome + '/settings.json' : advancedState.codexHome + '/config.toml')}" ${disabled}>${icon('edit', 15)}编辑运行参数</button></div><div class="advanced-setting-card"><strong>${isPi() ? '可调参数' : '建议参数'}</strong><small>${isPi() ? 'defaultThinkingLevel、thinkingBudgets、compaction、retry、terminal、images、httpProxy' : 'model_reasoning_effort、service_tier、request_max_retries、stream_idle_timeout_ms'}</small></div></div><div class="advanced-doc-heading"><strong>其他配置文件</strong><span class="muted-label">自动备份后写入</span></div><ul class="advanced-list">${docRows || '<li class="workspace-empty">没有配置文件。</li>'}</ul></section>`;
  const diagnostics = (advancedState.diagnostics || []).map((item) => `<li>${esc(item)}</li>`).join('');
@@ -366,11 +341,12 @@ function renderAdvancedPage(disabled) {
 }
 function renderCLIPage(disabled) {
  const currentCLI = isPi() ? 'pi' : 'codex';
- const tools = cliState.tools.filter((tool) => tool.id === currentCLI);
- return `<section class="cli-page"><div class="skills-page-heading"><div><h2>启动 CLI</h2><p>在系统终端中打开 ${isPi() ? 'pi agent' : 'Codex'}。</p></div><button id="cli-refresh" class="button button-secondary" ${disabled}>${icon('refresh',16)}重新检测</button></div><section class="panel cli-workspace"><label class="field"><span>工作目录</span><input id="cli-directory" value="${esc(cliDirectory)}" placeholder="选择项目所在文件夹" ${disabled}><small>CLI 会在这个目录中启动。</small></label><button id="cli-choose-directory" class="button button-secondary" ${disabled}>${icon('folder',16)}选择目录</button></section><div class="cli-grid">${tools.map((tool)=>`<article id="cli-card-${tool.id}" class="panel cli-card ${selectedCLI===tool.id?'selected':''}"><div class="cli-card-heading"><span class="cli-icon">${icon('terminal',23)}</span><div><h3>${esc(tool.name)}</h3><span class="cli-detected ${tool.installed?'found':''}">${tool.installed?'已检测到':'未安装或未找到'}</span></div><span class="skill-badge">当前应用</span></div><code>${esc(tool.path || tool.command)}</code>${tool.error?`<p class="cli-error">${esc(tool.error)}</p>`:''}<button class="button button-primary" data-launch-cli="${esc(tool.id)}" ${busy||!tool.installed?'disabled':''}>${icon('play',15)}${language==='en'?'Launch ':'启动 '}${esc(tool.name)}</button></article>`).join('') || '<div class="skill-empty">正在检测 CLI…</div>'}</div></section>`;
+ const tools = cliState.tools.filter((tool) => tool.id === currentCLI).map((tool) => { const dependency = environment.getState().tools.find((item) => item.id === tool.id); return { ...tool, ready: dependency ? dependency.ready : tool.installed }; });
+ return `<section class="cli-page"><div class="skills-page-heading"><div><h2>启动 CLI</h2><p>在系统终端中打开 ${isPi() ? 'pi agent' : 'Codex'}。</p></div><button id="cli-refresh" class="button button-secondary" ${disabled}>${icon('refresh',16)}重新检测</button></div>${environment.render(disabled)}<section class="panel cli-workspace"><label class="field"><span>工作目录</span><input id="cli-directory" value="${esc(cliDirectory)}" placeholder="选择项目所在文件夹" ${disabled}><small>CLI 会在这个目录中启动。</small></label><button id="cli-choose-directory" class="button button-secondary" ${disabled}>${icon('folder',16)}选择目录</button></section><div class="cli-grid">${tools.map((tool)=>`<article id="cli-card-${tool.id}" class="panel cli-card ${selectedCLI===tool.id?'selected':''}"><div class="cli-card-heading"><span class="cli-icon">${icon('terminal',23)}</span><div><h3>${esc(tool.name)}</h3><span class="cli-detected ${tool.installed?'found':''}">${tool.installed?'已检测到':'未安装或未找到'}</span></div><span class="skill-badge">当前应用</span></div><code>${esc(tool.path || tool.command)}</code>${tool.error?`<p class="cli-error">${esc(tool.error)}</p>`:''}<button class="button button-primary" data-launch-cli="${esc(tool.id)}" ${busy||environment.isInstalling()||!tool.ready?'disabled':''}>${icon('play',15)}${language==='en'?'Launch ':'启动 '}${esc(tool.name)}</button></article>`).join('') || '<div class="skill-empty">正在检测 CLI…</div>'}</div></section>`;
 }
 async function navigatePage(next, section = skillSection) {
  if (busy) return;
+ if (next === 'chat' && !isPi()) return;
  marketGeneration++;
  page = next; skillSection = section; showTrash = section === 'trash'; treeExpanded[next] = true;
  resetPageScroll = true; error = ''; message = ''; render();
@@ -378,6 +354,7 @@ async function navigatePage(next, section = skillSection) {
  if (page === 'cli') await run('cli-load', refreshCLI);
  if (page === 'workspace') await run('workspace-load', refreshWorkspace);
  if (page === 'advanced') await run('advanced-load', refreshAdvanced);
+ if (page === 'chat') await piChat.refresh();
 }
 function renderUpdateManager() {
  const available = updateState.updateAvailable;
@@ -425,6 +402,7 @@ function renderSidebar(disabled, title) {
  <nav class="sidebar-nav" aria-label="主导航"><div class="nav-caption">工作空间</div><ul class="nav-tree"><li><div class="nav-group-heading ${workspaceActive ? 'active' : ''}"><button class="nav-group-link" data-page="workspace" ${disabled}>${icon('briefcase',18)}<span>工作区</span>${workspaceState.projects.length ? `<span class="nav-count">${workspaceState.projects.length}</span>` : ''}</button></div></li>
  <li><div class="nav-group-heading ${modelActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-models" data-toggle-section="models" aria-label="展开或折叠模型设置" aria-expanded="${treeExpanded.models}" aria-controls="model-nav">${icon(treeExpanded.models ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="models" ${disabled}>${icon('server', 18)}<span>模型设置</span><span class="nav-count">${state.profiles.length}</span></button></div>
  <ul class="nav-children" id="model-nav" ${treeExpanded.models ? '' : 'hidden'}>${profiles}<li><button class="nav-child nav-add ${modelActive && !draft.id ? 'selected' : ''}" id="new" ${disabled}>${icon('plus', 16)}<span>添加本地配置</span></button></li></ul></li>
+ ${isPi() ? `<li><div class="nav-group-heading ${page === 'chat' ? 'active' : ''}"><button class="nav-group-link chat-nav-link" data-page="chat" ${page === 'chat' ? 'aria-current="page"' : ''} ${disabled}>${icon('chat', 18)}<span>对话</span></button></div></li>` : ''}
  <li><div class="nav-group-heading ${skillActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-skills" data-toggle-section="skills" aria-label="展开或折叠技能管理" aria-expanded="${treeExpanded.skills}" aria-controls="skill-nav">${icon(treeExpanded.skills ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="skills" ${disabled}>${icon('spark', 18)}<span>技能管理</span></button></div>
  <ul class="nav-children" id="skill-nav" ${treeExpanded.skills ? '' : 'hidden'}>${sections.map(([id, symbol, label]) => `<li><button class="nav-child ${skillActive && skillSection === id ? 'selected' : ''}" data-skill-section="${id}" ${skillActive && skillSection === id ? 'aria-current="page"' : ''} ${disabled}>${icon(symbol, 16)}<span>${label}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${page==='cli'?'active':''}"><button class="nav-disclosure" id="toggle-cli" data-toggle-section="cli" aria-label="展开或折叠 CLI 启动器" aria-expanded="${treeExpanded.cli}" aria-controls="cli-nav">${icon(treeExpanded.cli?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="cli" ${disabled}>${icon('terminal',18)}<span>CLI 启动器</span></button></div><ul class="nav-children" id="cli-nav" ${treeExpanded.cli?'':'hidden'}>${[[isPi() ? 'pi' : 'codex', isPi() ? 'pi CLI' : 'Codex CLI']].map(([id,name])=>`<li><button id="nav-cli-${id}" class="nav-child ${page==='cli'&&selectedCLI===id?'selected':''}" data-cli-nav="${id}" ${disabled}>${icon('terminal',16)}<span>${name}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${advancedActive?'active':''}"><button class="nav-disclosure" id="toggle-advanced" data-toggle-section="advanced" aria-label="展开或折叠高级设置" aria-expanded="${treeExpanded.advanced}" aria-controls="advanced-nav">${icon(treeExpanded.advanced?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="advanced" ${disabled}>${icon('sliders',18)}<span>高级设置</span></button></div><ul class="nav-children" id="advanced-nav" ${treeExpanded.advanced?'':'hidden'}>${[['memory','brain','记忆管理'],['mcp','plug','MCP 配置'],['settings','sliders','运行参数']].map(([id,symbol,label])=>`<li><button class="nav-child ${advancedActive && advancedSection === id ? 'selected' : ''}" data-advanced-section="${id}" ${disabled}>${icon(symbol,16)}<span>${label}</span></button></li>`).join('')}</ul></li></ul></nav>
  <div class="sidebar-bottom"><button class="connection-card" id="settings" ${disabled} aria-label="打开设置" title="打开设置"><span class="connection-icon">${icon(currentIsLocal() ? 'server' : 'cloud', 19)}</span><span class="connection-copy"><span class="connection-target">${isPi() ? 'pi agent' : 'ChatGPT / Codex'}</span><strong>${esc(title)}</strong><small>${esc(state.activeModel || '使用默认模型')}</small></span>${icon('settings', 17)}</button><div class="sidebar-foot"><span class="status-label"><span class="status-dot"></span>${isPi() ? 'pi agent 配置' : state.chatGptRunning ? 'ChatGPT 运行中' : 'ChatGPT 未运行'}</span><span>v${esc(state.version)}</span></div></div></aside>
@@ -455,6 +433,8 @@ function renderSettings() {
  <div class="settings-row"><div><strong>菜单栏宽度</strong><small>拖动分隔条或用方向键调整。</small></div><div class="sidebar-size-controls"><button class="icon-button" id="sidebar-shrink" aria-label="缩窄菜单栏">${icon('minus', 16)}</button><output id="sidebar-width-value">${sidebarWidth} px</output><button class="icon-button" id="sidebar-expand" aria-label="加宽菜单栏">${icon('plus', 16)}</button></div></div>${renderUpdateManager()}</div></div>`;
 }
 function render() {
+ piChat.syncState();
+ if (page === 'chat' && !isPi()) page = 'models';
  const openDetails = [...app.querySelectorAll('details[open][id]')].map((el)=>el.id);
  const focusID = (!busy && restoreFocusID) || document.activeElement?.id;
  if (!busy) restoreFocusID = '';
@@ -464,10 +444,10 @@ function render() {
  const title = currentIsLocal() ? (profileFor(state.activeProfileId)?.name || '本地模型') : isPi() ? (state.activeProvider === 'automatic' ? 'pi 默认模型' : state.activeProvider) : 'OpenAI 云端';
  const disabled = busy || !loaded ? 'disabled' : '';
  const sectionTitle = { installed: '已安装', market: '技能市场', trash: '回收区' }[skillSection];
- const pageTitle = page === 'models' ? '模型设置' : page === 'cli' ? 'CLI 启动器' : page === 'workspace' ? '工作区' : page === 'advanced' ? '高级设置' : '技能管理';
- const pageSubtitle = page === 'models' ? '连接模型服务，选择模型并应用配置。' : page === 'cli' ? '选择工作目录，启动对应的命令行代理。' : page === 'workspace' ? '管理项目指令链和两个代理都能发现的共享技能。' : page === 'advanced' ? '管理记忆、MCP 服务器和高级运行参数。' : '搜索、安装和整理当前应用的技能。';
- app.innerHTML = `<div class="shell">${renderSidebar(disabled, title)}<main class="content" id="main-content"><header class="page-header"><div class="page-title"><h1>${pageTitle}</h1><p>${pageSubtitle}</p></div><div class="page-actions"><label class="target-select"><span>当前应用</span><select id="app-target" ${disabled}><option value="chatgpt" ${isPi() ? '' : 'selected'}>ChatGPT / Codex</option><option value="pi" ${isPi() ? 'selected' : ''}>pi agent</option></select></label><button class="icon-button" id="reload" title="刷新当前状态" aria-label="刷新当前状态" ${disabled}>${icon('refresh', 18)}</button></div></header>
- <div class="page-body"><div class="feedback ${error ? 'is-error' : ''}" role="status">${esc(error || (busy ? '正在处理…' : message || (dirty ? '有未保存的修改。' : '')))}</div>${page === 'models' ? renderModelPage(disabled, title) : page === 'cli' ? renderCLIPage(disabled) : page === 'workspace' ? renderWorkspacePage(disabled) : page === 'advanced' ? renderAdvancedPage(disabled) : `<section class="skills-page"><div class="skills-page-heading"><div><h2>${sectionTitle}</h2><p>${isPi() ? 'pi agent' : 'ChatGPT / Codex'} · ${sectionTitle === '技能市场' ? '从支持的市场安装技能。' : '管理当前应用的本地技能。'}</p></div><button id="skills-refresh" class="button button-secondary" ${disabled}>${icon('refresh', 16)}刷新技能</button></div><div class="skills-root"><span>目录</span><code>${esc(skillsState.root || '正在读取…')}</code></div>${renderSkillRows()}</section>`}</div></main></div>`;
+ const pageTitle = page === 'chat' ? '对话' : page === 'models' ? '模型设置' : page === 'cli' ? 'CLI 启动器' : page === 'workspace' ? '工作区' : page === 'advanced' ? '高级设置' : '技能管理';
+ const pageSubtitle = page === 'chat' ? '与当前 pi 模型进行多轮对话，实时查看回复。' : page === 'models' ? '连接模型服务，选择模型并应用配置。' : page === 'cli' ? '选择工作目录，启动对应的命令行代理。' : page === 'workspace' ? '管理项目指令链和两个代理都能发现的共享技能。' : page === 'advanced' ? '管理记忆、MCP 服务器和高级运行参数。' : '搜索、安装和整理当前应用的技能。';
+ app.innerHTML = `<div class="shell">${renderSidebar(disabled, title)}<main class="content ${page === 'chat' ? 'conversation-content' : ''}" id="main-content"><header class="page-header"><div class="page-title"><h1>${pageTitle}</h1><p>${pageSubtitle}</p></div><div class="page-actions"><label class="target-select"><span>当前应用</span><select id="app-target" ${disabled}><option value="chatgpt" ${isPi() ? '' : 'selected'}>ChatGPT / Codex</option><option value="pi" ${isPi() ? 'selected' : ''}>pi agent</option></select></label><button class="icon-button" id="reload" title="刷新当前状态" aria-label="刷新当前状态" ${disabled}>${icon('refresh', 18)}</button></div></header>
+ <div class="page-body ${page === 'chat' ? 'chat-page-body' : ''}"><div class="feedback ${error ? 'is-error' : ''}" role="status">${esc(error || (busy ? '正在处理…' : message || (dirty ? '有未保存的修改。' : '')))}</div>${page !== 'cli' ? environment.notice(state.target) : ''}${page === 'chat' ? piChat.render(disabled) : page === 'models' ? renderModelPage(disabled, title) : page === 'cli' ? renderCLIPage(disabled) : page === 'workspace' ? renderWorkspacePage(disabled) : page === 'advanced' ? renderAdvancedPage(disabled) : `<section class="skills-page"><div class="skills-page-heading"><div><h2>${sectionTitle}</h2><p>${isPi() ? 'pi agent' : 'ChatGPT / Codex'} · ${sectionTitle === '技能市场' ? '从支持的市场安装技能。' : '管理当前应用的本地技能。'}</p></div><button id="skills-refresh" class="button button-secondary" ${disabled}>${icon('refresh', 16)}刷新技能</button></div><div class="skills-root"><span>目录</span><code>${esc(skillsState.root || '正在读取…')}</code></div>${renderSkillRows()}</section>`}</div></main></div>`;
  if (configPreview !== null) app.insertAdjacentHTML('beforeend', `<div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="config-title"><div class="config-modal-card"><div class="config-modal-head"><div><h3 id="config-title">编辑 ${configName()}</h3></div><button class="icon-button" id="config-close" aria-label="关闭配置编辑">${icon('close', 18)}</button></div><textarea id="config-editor" class="config-preview" aria-label="${configName()}" spellcheck="false">${esc(configPreview)}</textarea><div class="config-modal-actions"><span>${isPi() ? '保存前会校验 JSON/JSONC，并自动备份原文件。' : '保存前会校验 TOML，并自动备份原文件。'}</span><button class="button button-secondary" id="config-save">${icon('save', 16)}保存 ${configName()}</button></div></div></div>`);
  if (agentPreview !== null) app.insertAdjacentHTML('beforeend', `<div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="agent-title"><div class="config-modal-card"><div class="config-modal-head"><div><h3 id="agent-title">编辑代理指令</h3><small>${esc(agentPreview.path)}</small></div><button class="icon-button" id="agent-close" aria-label="关闭指令编辑">${icon('close', 18)}</button></div><textarea id="agent-editor" class="config-preview" aria-label="文件内容" spellcheck="false">${esc(agentPreview.content)}</textarea><div class="config-modal-actions"><span>保存前会自动备份原文件；保存后重新加载作用链。</span><button class="button button-secondary" id="agent-save">${icon('save', 16)}保存指令</button></div></div></div>`);
  if (advancedPreview !== null) app.insertAdjacentHTML('beforeend', `<div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="advanced-title"><div class="config-modal-card"><div class="config-modal-head"><div><h3 id="advanced-title">${esc(advancedPreview.title || '编辑高级配置')}</h3><small>${esc(advancedPreview.path || advancedState.memoryVault || '')}</small></div><button class="icon-button" id="advanced-close" aria-label="关闭高级配置编辑">${icon('close', 18)}</button></div>${advancedPreview.isNew ? `<div class="advanced-memory-fields"><label class="field advanced-memory-name"><span>记忆名称</span><input id="advanced-memory-name" value="${esc(advancedPreview.name || '')}" placeholder="例如：project-context.md" maxlength="100"></label><label class="field advanced-memory-scope"><span>保存位置</span><select id="advanced-memory-scope"><option value="global"${advancedPreview.scope === 'project' ? '' : ' selected'}>全局记忆（所有项目共用）</option><option value="project"${advancedPreview.scope === 'project' ? ' selected' : ''}>当前项目记忆</option></select></label></div>` : ''}<textarea id="advanced-editor" class="config-preview" aria-label="${advancedPreview.isNew ? '记忆内容' : '配置内容'}" spellcheck="false"${advancedPreview.readOnly ? ' readonly' : ''}>${esc(advancedPreview.content || '')}</textarea><div class="config-modal-actions"><span>${advancedPreview.readOnly ? '这是代理自己生成的记忆，本应用只读；可复制内容后新建共享记忆。' : advancedPreview.kind === 'memory' ? '保存前会自动备份原记忆；删除会移入应用备份目录。' : '保存前会校验 JSON/JSONC 或 TOML，并自动备份原文件。'}</span>${advancedPreview.readOnly ? '' : `<button class="button button-secondary" id="advanced-save">${icon('save', 16)}${advancedPreview.kind === 'memory' ? '保存记忆' : '保存配置'}</button>`}</div></div></div>`);
@@ -488,6 +468,8 @@ function render() {
 }
 
 function bind() {
+ environment.bind(() => navigatePage('cli'));
+ piChat.bind({ openModels: () => navigatePage('models'), switchProfile: (id) => run('chat-profile', async () => { state = await ActivateProfile(id); piChat.syncState(); await piChat.refresh(); }) });
  const on = (id, event, fn) => document.getElementById(id)?.addEventListener(event, fn);
  on('name', 'input', (e) => { draft.name = e.target.value; dirty = true; });
  on('url', 'input', (e) => { draft.baseUrl = e.target.value; dirty = true; });
@@ -575,7 +557,7 @@ function bind() {
  on('lang-en', 'click', () => { language = 'en'; localStorage.setItem('model-switcher-language', language); render(); });
  on('theme-light', 'click', () => { theme = 'light'; localStorage.setItem('model-switcher-theme', theme); applyPreferences(); render(); });
  on('theme-dark', 'click', () => { theme = 'dark'; localStorage.setItem('model-switcher-theme', theme); applyPreferences(); render(); });
- on('reload', 'click', () => run('reload', async () => { state = await LoadState(); loaded = true; if (page === 'skills') await refreshSkills(); if(page==='cli')await refreshCLI(); if(page==='advanced')await refreshAdvanced(); }));
+ on('reload', 'click', () => run('reload', async () => { state = await LoadState(); loaded = true; if (page === 'skills') await refreshSkills(); if(page==='cli')await refreshCLI(); if(page==='advanced')await refreshAdvanced(); if(page==='chat'){piChat.syncState();await piChat.refresh();} }));
  on('chatgpt-target', 'click', () => run('target', async () => { state = await ChooseChatGPTPath(); }));
  on('auto-target', 'click', () => run('target', async () => { state = await SetChatGPTPath(''); message = state.chatGptResolvedTarget ? '已自动找到 ChatGPT，当前路径已更新。' : ''; }));
  on('codex-dir', 'click', () => run('codex-dir', OpenCodexDirectory));
@@ -633,6 +615,7 @@ const modal = document.querySelector('.settings-modal, .config-modal');
 window.addEventListener('resize', () => applySidebarWidth());
 async function initialLoad() {
  render();
+ void environment.refresh();
  try {
   state = await withTimeout(LoadState(), 8000, '读取当前配置超时，请点击刷新重试');
   loaded = true;

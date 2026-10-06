@@ -332,7 +332,10 @@ func refreshMemoryVaultIndex() error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(filepath.Join(root, memoryIndexName), []byte(memoryVaultIndexText(entries)))
+	if err := atomicWrite(filepath.Join(root, memoryIndexName), []byte(memoryVaultIndexText(entries))); err != nil {
+		return err
+	}
+	return ensurePiMemoryBridge()
 }
 
 func ensureMemoryVaultDirs(paths ...string) error {

@@ -160,6 +160,8 @@ func (a *App) captureWindow() {
 }
 
 func (a *App) beforeClose(ctx context.Context) bool {
+	a.cancelPiChat()
+	a.ClosePiChatRuntime("")
 	a.captureWindow()
 	a.window.mu.Lock()
 	defer a.window.mu.Unlock()

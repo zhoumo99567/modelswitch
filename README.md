@@ -22,7 +22,7 @@
 
 创建、修改或删除共享记忆，以及打开高级设置或从启动器启动 pi CLI 时，工具会自动安装 `PI_CODING_AGENT_DIR/extensions/model-switcher-memory.js`（默认 `~/.pi/agent/extensions/`）。扩展在每次提问前读取全局记忆及 CLI 当前目录和父目录对应的项目记忆，优先加载 `soul.md` 中的名字和身份，不会混入其他项目的记忆；直接运行 `pi` 也适用。已有 Pi 会话首次接入后执行 `/reload`，之后记忆修改或删除在下次提问时生效。关闭扩展加载（例如 `--no-extensions`）会关闭此功能。记忆正文总读取量限于 64 KiB，单条最多读取 16 KiB，超出时提示代理按路径读取完整内容。工具保留用户已有的 `AGENTS.md`、`SYSTEM.md`、`APPEND_SYSTEM.md` 和 settings；Codex 仍需在全局指令中指向共享索引。
 
-设置中的“更新管理”默认跳过检查，因为当前没有配置更新源。部署 S3 后可通过环境变量 `MODELSWITCHER_UPDATE_URL` 指向清单，例如：`{"version":"0.2.0","windows":{"url":"https://.../ModelSwitcher.exe","sha256":"..."},"macos":{"url":"https://.../ModelSwitcher.app.zip","sha256":"..."}}`。下载后会校验 SHA-256；清单提供 `signature` 时，还会使用 `MODELSWITCHER_UPDATE_PUBLIC_KEY` 校验 Ed25519 签名。Windows 使用独立更新助手替换并重启 exe，macOS 替换并重新打开整个 app 包。
+设置中的“更新管理”默认从 GitHub Releases 的固定入口 `https://github.com/zhoumo99567/modelswitch/releases/latest/download/latest.json` 检查最新正式版，预发布版本不进入这个更新入口。首次 Release 发布前，检查会提示无法读取清单。可以通过环境变量 `MODELSWITCHER_UPDATE_URL` 覆盖更新源，清单格式仍为 `{"version":"0.2.0","windows":{"url":"https://.../ModelSwitcher.exe","sha256":"..."},"macos":{"url":"https://.../ModelSwitcher.app.zip","sha256":"..."}}`。下载流式写入临时文件并校验 SHA-256；清单提供 `signature` 时，还会使用 `MODELSWITCHER_UPDATE_PUBLIC_KEY` 校验 Ed25519 签名。更新助手等待原程序退出后，在应用所在目录暂存新版，再替换并重启；替换或启动失败会恢复旧版，失败原因保存在程序或 app 同级的 `<程序路径>.update.log`。更新不会覆盖同级的 `profiles.json`。默认更新源为空的旧版本需要先手动安装一次新版。
 
 左侧“技能管理 → 技能市场”支持在 OpenAI Skills、Anthropic Skills、Vercel Skills、OpenAI Plugins 和 pi-skills（badlogic/pi-skills）中按名称、描述、作者搜索，可以选择单个市场或全部市场。OpenAI Skills 使用 `.curated` 目录；OpenAI Plugins 仅展示官方 marketplace 中声明可供 Codex 安装的技能。市场目录缓存 10 分钟；全部市场并行加载，先显示已返回的结果，进度条分别显示每个市场的加载状态；市场请求不会锁住页面导航或应用选择。每个市场的完整请求限时 45 秒，并合并重复请求；某个市场不可用时会显示该市场的错误，其他结果仍可使用。列表每页显示 36 项，搜索和排序在已返回的数据上执行。可以按安装量、仓库 Stars、名称和市场排序。安装量来自 skills.sh 的公开搜索接口，并严格匹配官方仓库与技能名称；它是该平台记录的安装次数，不是全网下载量。GitHub Stars 代表整个仓库的热度，不是单个技能的评价。当前市场没有统一的用户评分，显示“未提供”，并提供仓库反馈和统计来源入口。真实零安装量显示 0，缺失值不会冒充 0；未知数据排在已知数据之后。统计并行加载并缓存一小时，不影响技能目录加载。可展开查看描述、作者、许可、仓库、版本和来源链接；缺失元数据会显示“未提供”。
 
@@ -46,9 +46,15 @@
 
 验证：`go test -race ./...`、`npm --prefix frontend test`、`npm --prefix frontend run build`。前端测试覆盖附件解析、pi-agent-core 队列/引导和 Wails 传输交接。可选真实依赖安装测试：`MODELSWITCHER_LIVE_DEPENDENCY_TEST=1 go test -run TestLiveDependencyInstallation -v`，在临时用户目录下载、校验并安装 Node.js/npm、pi 和 Codex，验证可运行后清理。可选真实市场测试：`MODELSWITCHER_LIVE_TEST=1 go test -run TestLiveSkillMarkets -v`；同时设置 `MODELSWITCHER_LIVE_INSTALL_TEST=1` 可在临时目录验证实际下载与安装。
 
-Windows 发布命令：`pwsh ./scripts/release.ps1 -Version 0.2.0`。脚本会使用 `-X main.AppVersion=...` 注入版本号，生成 `release/0.2.0/ModelSwitcher-0.2.0-windows-amd64.exe` 和 `latest.json`。
+GitHub 自动发布由 `.github/workflows/release.yml` 管理。先修改根目录 `VERSION` 并提交，推送与其一致的标签（例如 `VERSION` 为 `0.2.0` 时执行 `git tag v0.2.0`、`git push origin v0.2.0`）。Actions 使用 Go 1.23.12、Node.js 22.22.2 和 Wails CLI 2.12.0，运行前端测试、前端构建和 Go race 测试，再分别构建 Windows amd64 与 macOS universal。两边成功后统一生成 `latest.json` 和 `SHA256SUMS.txt`，把两个安装包及清单上传到草稿 Release，最后发布。正式版由 GitHub 自动决定 Latest；预发布标签（如 `v0.2.0-rc.1`）会明确标为 prerelease，且不会成为 Latest。已发布版本禁止覆盖，失败留下的草稿可以重跑。
 
-macOS 发布命令（需要在 macOS 主机安装 Xcode / WebKit 环境执行）：`./scripts/release-macos.sh 0.2.0`。它会生成 `.app.zip`、SHA-256 和合并后的 `latest.json`。
+在 GitHub Actions 页手动运行 Build and release，默认只构建完整下载包，不创建 Release；勾选 `publish` 时必须选择已存在、且与 `VERSION` 一致的版本标签。完整包在工作流的 `release-bundle` artifact 中保留 7 天，正式 Release 附件用于长期下载与应用更新。发布使用 Actions 自带的 `GITHUB_TOKEN` 和 `contents: write` 权限，不需要 S3 或额外的 GitHub 个人令牌。面向普通用户的更新入口需要公开仓库；源码私有时可使用另一个公开分发仓库。macOS 当前产物未配置开发者签名或公证，首次安装仍需按系统提示允许打开。
+
+Windows 本地发布命令：`pwsh ./scripts/release.ps1`（默认读取 `VERSION`），也可显式传入 `-Version 0.2.0`。脚本会使用 `-X main.AppVersion=...` 注入版本号，并通过程序的 `--version` 校验实际版本，生成 `release/<version>/ModelSwitcher-<version>-windows-amd64.exe`、`latest.json` 和 `SHA256SUMS.txt`。没有下载地址配置时只生成本地清单，清单的 URL 留空，不上传。
+
+macOS 本地发布命令（需要在 macOS 主机安装 Xcode / WebKit 环境执行）：`zsh ./scripts/release-macos.sh`，也可传入 `0.2.0`。它会生成 `release/<version>/ModelSwitcher-<version>-macos-universal.app.zip`、`SHA256SUMS.txt` 和合并后的 `latest.json`。两个本地脚本共用 `scripts/release-manifest.mjs`，执行 `node --test scripts/release-manifest.test.mjs` 可验证标签、清单与校验文件。Actions 在独立目录构建并汇总，避免两个平台各自覆盖更新清单。
+
+手动汇总 GitHub 产物时，可将 `MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL` 设为完整版本目录（如 `https://github.com/zhoumo99567/modelswitch/releases/download/v0.2.0`），然后执行 `node scripts/release-manifest.mjs manifest 0.2.0 release/0.2.0 --require-all`；缺少任一平台安装包会停止生成。Actions 构建时还通过 `MODELSWITCHER_BUILD_UPDATE_URL` 注入当前仓库的默认清单地址，fork 的产物会使用 fork 自身的 Release。
 
 也可以在 macOS 上运行仓库内的 `./build-macos.sh 0.2.0`。
 
@@ -56,4 +62,4 @@ macOS 发布命令（需要在 macOS 主机安装 Xcode / WebKit 环境执行）
 
 Windows 发布文件：`build/bin/model-switcher.exe`，是便携版单文件 exe，不需要安装 Go、Node.js 或 Wails。Windows 10/11 通常已包含 WebView2。
 
-macOS 发布文件：`build/bin/ModelSwitcher.app`。API Key 会随程序同级 `profiles.json` 保存，分发或备份该文件时请一并考虑其中的凭据内容。
+macOS 发布文件：`build/bin/model-switcher.app`。API Key 会随程序同级 `profiles.json` 保存，分发或备份该文件时请一并考虑其中的凭据内容。

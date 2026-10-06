@@ -1,0 +1,148 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a Release (select the matching version tag)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      publish: ${{ steps.metadata.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.22.2'
+      - name: Validate VERSION and release tag
+        id: metadata
+        env:
+          RELEASE_PUBLISH: ${{ inputs.publish }}
+        run: node scripts/release-manifest.mjs prepare
+      - name: Test release metadata and checksums
+        run: node --test scripts/release-manifest.test.mjs
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-amd64
+            suffix: windows-amd64.exe
+          - os: macos-15
+            platform: macos-universal
+            suffix: macos-universal.app.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.12'
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.22.2'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Frontend tests and build
+        run: |
+          npm --prefix frontend test
+          npm --prefix frontend run build
+      - name: Go tests
+        run: go test -race ./...
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MODELSWITCHER_BUILD_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
+        run: ./scripts/release.ps1 -Version '${{ needs.prepare.outputs.version }}'
+      - name: Package macOS universal
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MODELSWITCHER_BUILD_UPDATE_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
+        run: zsh scripts/release-macos.sh '${{ needs.prepare.outputs.version }}'
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          path: release/${{ needs.prepare.outputs.version }}/ModelSwitcher-${{ needs.prepare.outputs.version }}-${{ matrix.suffix }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.22.2'
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: release/${{ needs.prepare.outputs.version }}
+      - name: Generate the combined update manifest and SHA-256 list
+        env:
+          MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}
+        run: node scripts/release-manifest.mjs manifest '${{ needs.prepare.outputs.version }}' 'release/${{ needs.prepare.outputs.version }}' --require-all
+      - name: Upload complete release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          overwrite: true
+          path: release/${{ needs.prepare.outputs.version }}/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish complete GitHub Release
+        if: needs.prepare.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2>/dev/null; then
+            node -e 'if (!JSON.parse(require("fs").readFileSync("release-state.json", "utf8")).isDraft) throw new Error("Release already published; use a new version tag")'
+          else
+            args=(--draft --verify-tag --title "Model Switcher $RELEASE_TAG" --generate-notes)
+            if [[ "$RELEASE_PRERELEASE" == "true" ]]; then args+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" "${args[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" "release/$RELEASE_VERSION/"* --clobber
+          args=(--draft=false --prerelease="$RELEASE_PRERELEASE")
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then args+=(--latest=false); fi
+          gh release edit "$RELEASE_TAG" "${args[@]}"

@@ -35,6 +35,8 @@ type App struct {
 	piRuntimeEmit   func(PiChatRuntimeEvent)
 	dependencyMu    sync.Mutex
 	dependencyJob   DependencyInstallState
+	updateMu        sync.Mutex
+	updateStarted   bool
 }
 type Model struct {
 	ID             string `json:"id"`

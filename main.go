@@ -14,7 +14,11 @@ import (
 var assets embed.FS
 
 func main() {
-	if len(os.Args) == 4 && os.Args[1] == "--update-helper" {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(AppVersion)
+		return
+	}
+	if (len(os.Args) == 4 || len(os.Args) == 5) && os.Args[1] == "--update-helper" {
 		if err := runUpdateHelper(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

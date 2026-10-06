@@ -10,11 +10,16 @@ Set-Location $Root
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = (Get-Content -Raw (Join-Path $Root "VERSION")).Trim()
 }
-if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
-    throw "Version must use semantic versioning, for example 0.2.0"
-}
+# Use the same semantic version validation as the publishing workflow.
+& node (Join-Path $PSScriptRoot "release-manifest.mjs") prepare $Version
+if ($LASTEXITCODE -ne 0) { throw "Invalid release version or tag" }
 
 $ldflags = "-X main.AppVersion=$Version"
+if ($env:MODELSWITCHER_BUILD_UPDATE_URL) {
+    $updateUrl = $env:MODELSWITCHER_BUILD_UPDATE_URL.Trim()
+    if ($updateUrl -notmatch '^https://[^\s\x27]+$') { throw "Build update URL must be HTTPS without spaces or quotes" }
+    $ldflags += " -X 'main.defaultUpdateManifestURL=$updateUrl'"
+}
 $outputDir = Join-Path $Root "release\$Version"
 $windowsName = "ModelSwitcher-$Version-windows-amd64.exe"
 $windowsPath = Join-Path $outputDir $windowsName
@@ -24,34 +29,21 @@ New-Item -ItemType Directory -Force $outputDir | Out-Null
 Write-Host "Building Windows $Version..."
 & wails build -clean -platform windows/amd64 -ldflags $ldflags
 if ($LASTEXITCODE -ne 0) { throw "wails build failed" }
+$builtVersion = (& (Join-Path $Root "build\bin\model-switcher.exe") --version | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $builtVersion -ne $Version) { throw "Built application version does not match VERSION: $builtVersion" }
 Copy-Item -Force (Join-Path $Root "build\bin\model-switcher.exe") $windowsPath
 
-function Get-Sha256([string]$Path) {
-    return (Get-FileHash -Algorithm SHA256 $Path).Hash.ToLowerInvariant()
-}
-
 $baseUrl = if ($env:MODELSWITCHER_UPDATE_BASE_URL) { $env:MODELSWITCHER_UPDATE_BASE_URL.TrimEnd('/') } else { "" }
-$windowsUrl = if ($baseUrl) { "$baseUrl/$Version/$windowsName" } else { "" }
-$manifest = [ordered]@{
-    version = $Version
-    windows = [ordered]@{
-        url = $windowsUrl
-        sha256 = Get-Sha256 $windowsPath
-    }
-    macos = [ordered]@{
-        url = ""
-        sha256 = ""
-    }
-}
-
 $macZip = Join-Path $outputDir "ModelSwitcher-$Version-macos-universal.app.zip"
-if (Test-Path $macZip) {
-    $manifest.macos.url = if ($baseUrl) { "$baseUrl/$Version/$(Split-Path $macZip -Leaf)" } else { "" }
-    $manifest.macos.sha256 = Get-Sha256 $macZip
+if ($Publish -and -not $baseUrl) { throw "Set MODELSWITCHER_UPDATE_BASE_URL before S3 publishing" }
+$previousDownloadBase = $env:MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL
+try {
+    if (-not $previousDownloadBase -and $baseUrl) { $env:MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL = "$baseUrl/$Version" }
+    & node (Join-Path $PSScriptRoot "release-manifest.mjs") manifest $Version $outputDir
+    if ($LASTEXITCODE -ne 0) { throw "Generating release manifest failed" }
+} finally {
+    $env:MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL = $previousDownloadBase
 }
-$json = $manifest | ConvertTo-Json -Depth 5
-$utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
-[System.IO.File]::WriteAllText($manifestPath, $json, $utf8)
 Write-Host "Created $manifestPath"
 
 if ($Publish) {
@@ -66,6 +58,8 @@ if ($Publish) {
     }
     & aws s3 cp $manifestPath "$s3Uri/latest.json" --only-show-errors --content-type application/json
     if ($LASTEXITCODE -ne 0) { throw "Uploading latest.json failed" }
+    & aws s3 cp (Join-Path $outputDir "SHA256SUMS.txt") "$s3Uri/$Version/SHA256SUMS.txt" --only-show-errors
+    if ($LASTEXITCODE -ne 0) { throw "Uploading SHA256SUMS.txt failed" }
     Write-Host "Published version $Version to $s3Uri"
 } else {
     Write-Host "Build only. Add -Publish after setting MODELSWITCHER_S3_URI and MODELSWITCHER_UPDATE_BASE_URL."

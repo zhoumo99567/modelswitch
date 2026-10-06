@@ -21,12 +21,14 @@ if [[ -n "${MODELSWITCHER_BUILD_UPDATE_URL:-}" ]]; then
   LDFLAGS="$LDFLAGS -X main.defaultUpdateManifestURL=$MODELSWITCHER_BUILD_UPDATE_URL"
 fi
 wails build -clean -platform darwin/universal -ldflags "$LDFLAGS"
-BUILT_VERSION="$(build/bin/model-switcher.app/Contents/MacOS/model-switcher --version)"
+BUNDLE="build/bin/$(node -p 'require("./wails.json").name').app"
+EXECUTABLE="$BUNDLE/Contents/MacOS/$(node -p 'require("./wails.json").outputfilename')"
+BUILT_VERSION="$("$EXECUTABLE" --version)"
 if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
   echo "Built application version does not match VERSION: $BUILT_VERSION" >&2
   exit 1
 fi
-ditto -c -k --keepParent build/bin/model-switcher.app "$ZIP"
+ditto -c -k --keepParent "$BUNDLE" "$ZIP"
 DOWNLOAD_BASE="${MODELSWITCHER_RELEASE_DOWNLOAD_BASE_URL:-}"
 if [[ -z "$DOWNLOAD_BASE" && -n "$BASE_URL" ]]; then DOWNLOAD_BASE="${BASE_URL%/}/$VERSION"; fi
 if [[ "${PUBLISH:-0}" == "1" && -z "$BASE_URL" ]]; then

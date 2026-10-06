@@ -6,4 +6,4 @@ VERSION="${1:-$(tr -d '[:space:]' < VERSION)}"
 npm --prefix frontend install
 wails build -clean -platform darwin/universal -ldflags "-X main.AppVersion=$VERSION"
 
-echo "Built build/bin/model-switcher.app version $VERSION"
+echo "Built build/bin/ModelSwitcher.app version $VERSION"

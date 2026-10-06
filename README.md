@@ -62,4 +62,4 @@ macOS 本地发布命令（需要在 macOS 主机安装 Xcode / WebKit 环境执
 
 Windows 发布文件：`build/bin/model-switcher.exe`，是便携版单文件 exe，不需要安装 Go、Node.js 或 Wails。Windows 10/11 通常已包含 WebView2。
 
-macOS 发布文件：`build/bin/model-switcher.app`。API Key 会随程序同级 `profiles.json` 保存，分发或备份该文件时请一并考虑其中的凭据内容。
+macOS 发布文件：`build/bin/ModelSwitcher.app`。API Key 会随程序同级 `profiles.json` 保存，分发或备份该文件时请一并考虑其中的凭据内容。

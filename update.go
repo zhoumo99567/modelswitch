@@ -330,7 +330,8 @@ func replaceExecutable(target, artifact string) error {
 	}
 	defer os.Remove(staged)
 	return replaceUpdateTarget(target, staged, func(path string) error {
-		cmd := hiddenCommand(path)
+		// The updater helper is hidden, but the restarted GUI must be visible.
+		cmd := exec.Command(path)
 		cmd.Dir = filepath.Dir(path)
 		if err := cmd.Start(); err != nil {
 			return err

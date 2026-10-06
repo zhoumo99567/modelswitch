@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -104,7 +105,15 @@ func defaultWindowBounds(display windowDisplay) windowBounds {
 }
 
 func (a *App) restoreWindow(ctx context.Context) {
-	defer wailsruntime.WindowShow(ctx)
+	defer func() {
+		wailsruntime.WindowShow(ctx)
+		if runtime.GOOS == "windows" {
+			// The 0.2.0 updater launches with SW_HIDE. Windows consumes that
+			// startup flag on the first ShowWindow, so show again for upgrades
+			// from that release as well as ordinary launches.
+			wailsruntime.WindowShow(ctx)
+		}
+	}()
 	_, displays, _, err := nativeWindowState()
 	if err != nil || len(displays) == 0 {
 		return

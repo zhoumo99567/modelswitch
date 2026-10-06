@@ -124,7 +124,9 @@ func loadPiChatConnection() (piChatConnection, error) {
 	key := rawString(provider, "apiKey")
 	if strings.HasPrefix(key, "!") {
 		// Resolve our own credential command directly; never execute config text.
-		if !strings.Contains(key, "--model-switcher-token "+profile.ID) {
+		// macOS quotes the profile ID; Windows emits it without quotes. Require
+		// the complete trailing argument so another ID or extra commands fail.
+		if !strings.HasSuffix(key, " --model-switcher-token "+profile.ID) && !strings.HasSuffix(key, " --model-switcher-token '"+profile.ID+"'") {
 			return c, errors.New("对话不执行自定义凭据命令，请重新应用配置")
 		}
 		c.apiKey = storedAPIKey(*profile)

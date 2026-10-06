@@ -44,6 +44,60 @@ func awaitPiChatEvent(t *testing.T, events <-chan PiChatEvent) PiChatEvent {
 	}
 }
 
+func TestPiChatReadsQuotedCredentialCommands(t *testing.T) {
+	isolateSkillStore(t)
+	p := storedProfile{ProfileView: ProfileView{ID: "chat-test", Name: "Chat test", BaseURL: "http://127.0.0.1:1/v1", APIKey: "unit-test-secret", SelectedModel: "test-model"}}
+	if err := writeStore(storeFile{Target: "pi", Profiles: []storedProfile{p}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewApp().ActivateProfile(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(piRoot(), "models.json")
+	models, _, err := readPiObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var providers map[string]json.RawMessage
+	if err := json.Unmarshal(models["providers"], &providers); err != nil {
+		t.Fatal(err)
+	}
+	var provider map[string]json.RawMessage
+	if err := json.Unmarshal(providers[providerID], &provider); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, command string
+		valid         bool
+	}{
+		{"Windows", `!"C:\Program Files\model-switcher.exe" --model-switcher-token chat-test`, true},
+		{"macOS", `!'/Applications/Model Switcher.app/Contents/MacOS/model-switcher' --model-switcher-token 'chat-test'`, true},
+		{"wrong profile", `!'/app' --model-switcher-token 'other-profile'`, false},
+		{"profile prefix", `!"app.exe" --model-switcher-token chat-test-other`, false},
+		{"extra command", `!"app.exe" --model-switcher-token chat-test; echo unwanted`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider["apiKey"] = toRaw(tc.command)
+			providers[providerID] = toRaw(provider)
+			models["providers"] = toRaw(providers)
+			if err := atomicWrite(path, toRaw(models)); err != nil {
+				t.Fatal(err)
+			}
+			connection, err := loadPiChatConnection()
+			if tc.valid {
+				if err != nil {
+					t.Fatalf("generated credential command rejected: %v", err)
+				}
+				if connection.apiKey != p.APIKey {
+					t.Fatal("credential command did not resolve the saved profile")
+				}
+			} else if err == nil {
+				t.Fatal("accepted a command for a different profile or extra arguments")
+			}
+		})
+	}
+}
+
 func TestPiChatStreamsCurrentConfiguration(t *testing.T) {
 	firstChunk := make(chan struct{})
 	finish := make(chan struct{})

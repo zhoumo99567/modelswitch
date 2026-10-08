@@ -339,6 +339,8 @@ export namespace main {
 	    activeProvider: string;
 	    activeModel: string;
 	    configPath: string;
+	    profilePath: string;
+	    loadError?: string;
 	    chatGptRunning: boolean;
 	    canRestore: boolean;
 	    chatGptTarget: string;
@@ -358,6 +360,8 @@ export namespace main {
 	        this.activeProvider = source["activeProvider"];
 	        this.activeModel = source["activeModel"];
 	        this.configPath = source["configPath"];
+	        this.profilePath = source["profilePath"];
+	        this.loadError = source["loadError"];
 	        this.chatGptRunning = source["chatGptRunning"];
 	        this.canRestore = source["canRestore"];
 	        this.chatGptTarget = source["chatGptTarget"];

@@ -358,6 +358,8 @@ code { color: var(--secondary); font: 11px/1.7 ui-monospace, SFMono-Regular, Con
 .settings-row > div:first-child { display: grid; gap: 8px; }
 .settings-row strong { font-size: 14px; font-weight: 600; }
 .settings-row small { color: var(--secondary); font-size: 12px; line-height: 1.7; max-width: 34ch; }
+.settings-path-row { align-items: flex-start; }
+.settings-path-row code { display: block; max-width: 260px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--secondary); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .settings-segment { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 .settings-segment button { min-height: 34px; padding: 7px 12px; border: 0; border-radius: 5px; color: var(--secondary); background: transparent; font-size: 12px; }
 .settings-segment button.active { color: #fff; background: #087d92; }

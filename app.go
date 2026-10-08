@@ -74,6 +74,8 @@ type AppState struct {
 	ActiveProvider        string        `json:"activeProvider"`
 	ActiveModel           string        `json:"activeModel"`
 	ConfigPath            string        `json:"configPath"`
+	ProfilePath           string        `json:"profilePath"`
+	LoadError             string        `json:"loadError,omitempty"`
 	ChatGPTRunning        bool          `json:"chatGptRunning"`
 	CanRestore            bool          `json:"canRestore"`
 	ChatGPTTarget         string        `json:"chatGptTarget"`
@@ -130,19 +132,24 @@ func (a *App) loadState() (AppState, error) {
 	if selectedTarget(store) == "pi" {
 		return a.loadPiState(store)
 	}
-	data, err := readConfig()
-	if err != nil {
-		return AppState{}, err
+	result := AppState{Target: "chatgpt", Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: "openai", ConfigPath: configPath(), ProfilePath: profileStorePath(), ChatGPTRunning: isChatGPTRunning(), CanRestore: store.Baseline != nil, ChatGPTTarget: store.ChatGPTTarget}
+	var config map[string]any
+	data, configErr := readConfig()
+	if configErr == nil {
+		config, configErr = parseConfig(data)
 	}
-	config, err := parseConfig(data)
-	if err != nil {
-		return AppState{}, err
+	if configErr != nil {
+		// Keep the portable profiles visible even when Codex's config.toml is
+		// missing or malformed. The old behavior returned an empty state, which
+		// made a valid profiles.json look as if it had not been read at all.
+		result.LoadError = fmt.Sprintf("读取 %s 失败：%v", configPath(), configErr)
 	}
 	provider := stringValue(config, "model_provider")
 	if provider == "" {
 		provider = "openai"
 	}
-	result := AppState{Target: "chatgpt", Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: provider, ActiveModel: stringValue(config, "model"), ConfigPath: configPath(), ChatGPTRunning: isChatGPTRunning(), CanRestore: store.Baseline != nil, ChatGPTTarget: store.ChatGPTTarget}
+	result.ActiveProvider = provider
+	result.ActiveModel = stringValue(config, "model")
 	result.ChatGPTResolvedTarget, err = resolveChatGPTTarget(store.ChatGPTTarget)
 	if err != nil {
 		result.ChatGPTTargetError = err.Error()
@@ -793,26 +800,49 @@ func configPath() string {
 	return filepath.Join(home, ".codex", "config.toml")
 }
 func readStore() (storeFile, error) {
-	path := dataPath()
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		// Read the previous per-user location once as a migration source. The
-		// next write will place the data beside the portable executable.
-		if path != legacyDataPath() {
-			data, err = os.ReadFile(legacyDataPath())
-		}
+	for _, path := range profilePathCandidates() {
+		data, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
-			return storeFile{}, nil
+			continue
+		}
+		if err != nil {
+			return storeFile{}, err
+		}
+		var s storeFile
+		if err = json.Unmarshal(data, &s); err != nil {
+			return s, fmt.Errorf("无法读取配置列表 %s: %w", path, err)
+		}
+		return s, nil
+	}
+	return storeFile{}, nil
+}
+
+// profilePathCandidates keeps the portable executable location first, then
+// accepts a profiles.json in the process working directory and the legacy
+// per-user location. The working-directory fallback is useful when macOS
+// launches a quarantined/translocated .app whose original bundle directory is
+// temporarily hidden from the process.
+func profilePathCandidates() []string {
+	paths := []string{dataPath()}
+	if cwd, err := os.Getwd(); err == nil {
+		candidate := filepath.Join(cwd, "profiles.json")
+		if filepath.Clean(candidate) != filepath.Clean(paths[0]) {
+			paths = append(paths, candidate)
 		}
 	}
-	if err != nil {
-		return storeFile{}, err
+	if legacy := legacyDataPath(); filepath.Clean(legacy) != filepath.Clean(paths[0]) {
+		paths = append(paths, legacy)
 	}
-	var s storeFile
-	if err = json.Unmarshal(data, &s); err != nil {
-		return s, fmt.Errorf("无法读取配置列表: %w", err)
+	return paths
+}
+
+func profileStorePath() string {
+	for _, path := range profilePathCandidates() {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
 	}
-	return s, nil
+	return dataPath()
 }
 func writeStore(s storeFile) error {
 	data, err := json.MarshalIndent(s, "", "  ")

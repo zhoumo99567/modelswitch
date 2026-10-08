@@ -188,7 +188,7 @@ func (a *App) loadPiState(store storeFile) (AppState, error) {
 	if provider == "" {
 		provider = "automatic"
 	}
-	state := AppState{Target: "pi", Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: provider, ActiveModel: rawString(settings, "defaultModel"), ConfigPath: filepath.Join(piRoot(), "models.json"), CanRestore: store.PiBaseline != nil}
+	state := AppState{Target: "pi", Version: AppVersion, Profiles: []ProfileView{}, ActiveProvider: provider, ActiveModel: rawString(settings, "defaultModel"), ConfigPath: filepath.Join(piRoot(), "models.json"), ProfilePath: profileStorePath(), CanRestore: store.PiBaseline != nil}
 	models, _, err := readPiObject(state.ConfigPath)
 	if err != nil {
 		return AppState{}, err

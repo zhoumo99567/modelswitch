@@ -23,7 +23,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var AppVersion = "0.1.0"
+var AppVersion = "0.2.2"
 
 // A variable allows release builds in forks to inject their own repository URL.
 var defaultUpdateManifestURL = "https://github.com/zhoumo99567/modelswitch/releases/latest/download/latest.json"

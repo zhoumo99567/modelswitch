@@ -20,7 +20,8 @@ if [[ -n "${MODELSWITCHER_BUILD_UPDATE_URL:-}" ]]; then
   fi
   LDFLAGS="$LDFLAGS -X main.defaultUpdateManifestURL=$MODELSWITCHER_BUILD_UPDATE_URL"
 fi
-wails build -clean -platform darwin/universal -ldflags "$LDFLAGS"
+# Keep the ignored portable profiles.json beside the app across local builds.
+wails build -platform darwin/universal -ldflags "$LDFLAGS"
 BUNDLE="build/bin/$(node -p 'require("./wails.json").name').app"
 EXECUTABLE="$BUNDLE/Contents/MacOS/$(node -p 'require("./wails.json").outputfilename')"
 BUILT_VERSION="$("$EXECUTABLE" --version)"

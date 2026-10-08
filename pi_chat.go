@@ -124,9 +124,7 @@ func loadPiChatConnection() (piChatConnection, error) {
 	key := rawString(provider, "apiKey")
 	if strings.HasPrefix(key, "!") {
 		// Resolve our own credential command directly; never execute config text.
-		// macOS quotes the profile ID; Windows emits it without quotes. Require
-		// the complete trailing argument so another ID or extra commands fail.
-		if !strings.HasSuffix(key, " --model-switcher-token "+profile.ID) && !strings.HasSuffix(key, " --model-switcher-token '"+profile.ID+"'") {
+		if !modelSwitcherTokenCommand(key, profile.ID) {
 			return c, errors.New("对话不执行自定义凭据命令，请重新应用配置")
 		}
 		c.apiKey = storedAPIKey(*profile)
@@ -166,6 +164,22 @@ func loadPiChatConnection() (piChatConnection, error) {
 	delete(model, "apiKey")
 	c.config.Model = toRaw(model)
 	return c, nil
+}
+
+func modelSwitcherTokenCommand(value, profileID string) bool {
+	if !strings.HasPrefix(value, "!") || profileID == "" {
+		return false
+	}
+	for _, suffix := range []string{
+		"--model-switcher-token " + profileID,
+		"--model-switcher-token '" + profileID + "'",
+		"--model-switcher-token \"" + profileID + "\"",
+	} {
+		if strings.Contains(value, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func piChatEnvValue(value string) string {

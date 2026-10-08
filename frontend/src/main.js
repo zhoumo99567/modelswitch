@@ -49,7 +49,7 @@ const paths = {
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
 const emptyDraft = () => ({ id: '', name: '', baseUrl: '', apiKey: '', selectedModel: '', models: [], clearApiKey: false, hasApiKey: false });
-let state = { version: '0.1.0', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
+let state = { version: '0.2.2', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', profilePath: '', loadError: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
 let draft = emptyDraft();
 let busy = '';
 let restoreFocusID = '';
@@ -87,7 +87,7 @@ let sidebarWidth = Number(localStorage.getItem('model-switcher-sidebar-width') |
 let resetPageScroll = false;
 const isPi = () => state.target === 'pi';
 const configName = () => isPi() ? 'models.json' : 'config.toml';
-let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.1.0', updateAvailable: false };
+let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.2.2', updateAvailable: false };
 let language = localStorage.getItem('model-switcher-language') || 'zh';
 let theme = localStorage.getItem('model-switcher-theme') || 'light';
 const app = document.querySelector('#app');
@@ -359,7 +359,7 @@ async function navigatePage(next, section = skillSection) {
 function renderUpdateManager() {
  const available = updateState.updateAvailable;
  const status = updateState.status === 'error' ? 'is-error' : available ? 'is-available' : '';
- return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.1.0') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
+ return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.2.2') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
 }
 
 function sidebarBounds() {
@@ -430,7 +430,8 @@ function renderSettings() {
  <div class="settings-feedback ${error ? 'is-error' : ''}" role="status">${esc(error || (busy ? '正在处理…' : ''))}</div>
  <div class="settings-row"><div><strong>语言</strong><small>界面语言和外观会保存在本机。</small></div><div class="settings-segment"><button id="lang-zh" class="${language === 'zh' ? 'active' : ''}">中文</button><button id="lang-en" class="${language === 'en' ? 'active' : ''}">English</button></div></div>
  <div class="settings-row"><div><strong>主题</strong><small>选择适合当前环境的显示模式。</small></div><div class="settings-segment"><button id="theme-light" class="${theme === 'light' ? 'active' : ''}">浅色</button><button id="theme-dark" class="${theme === 'dark' ? 'active' : ''}">深色</button></div></div>
- <div class="settings-row"><div><strong>菜单栏宽度</strong><small>拖动分隔条或用方向键调整。</small></div><div class="sidebar-size-controls"><button class="icon-button" id="sidebar-shrink" aria-label="缩窄菜单栏">${icon('minus', 16)}</button><output id="sidebar-width-value">${sidebarWidth} px</output><button class="icon-button" id="sidebar-expand" aria-label="加宽菜单栏">${icon('plus', 16)}</button></div></div>${renderUpdateManager()}</div></div>`;
+ <div class="settings-row"><div><strong>菜单栏宽度</strong><small>拖动分隔条或用方向键调整。</small></div><div class="sidebar-size-controls"><button class="icon-button" id="sidebar-shrink" aria-label="缩窄菜单栏">${icon('minus', 16)}</button><output id="sidebar-width-value">${sidebarWidth} px</output><button class="icon-button" id="sidebar-expand" aria-label="加宽菜单栏">${icon('plus', 16)}</button></div></div>
+ <div class="settings-row settings-path-row"><div><strong>配置文件位置</strong><small>启动时实际读取的 profiles.json；复制的 App 可能被 macOS 临时转移。</small></div><code title="${esc(state.profilePath || '')}">${esc(state.profilePath || '未找到，将在保存时创建')}</code></div>${renderUpdateManager()}</div></div>`;
 }
 function render() {
  piChat.syncState();
@@ -619,6 +620,7 @@ async function initialLoad() {
  try {
   state = await withTimeout(LoadState(), 8000, '读取当前配置超时，请点击刷新重试');
   loaded = true;
+  error = state.loadError || '';
   if (state.profiles.length) edit(state.profiles[0]); else render();
   try {
    workspaceState = await withTimeout(LoadWorkspaceState(), 8000, '读取工作区超时');

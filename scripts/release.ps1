@@ -27,7 +27,8 @@ $manifestPath = Join-Path $outputDir "latest.json"
 
 New-Item -ItemType Directory -Force $outputDir | Out-Null
 Write-Host "Building Windows $Version..."
-& wails build -clean -platform windows/amd64 -ldflags $ldflags
+# Keep the ignored portable profiles.json beside the app across local builds.
+& wails build -platform windows/amd64 -ldflags $ldflags
 if ($LASTEXITCODE -ne 0) { throw "wails build failed" }
 $builtVersion = (& (Join-Path $Root "build\bin\model-switcher.exe") --version | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $builtVersion -ne $Version) { throw "Built application version does not match VERSION: $builtVersion" }

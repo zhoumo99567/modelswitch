@@ -175,7 +175,7 @@ func modelSwitcherTokenCommand(value, profileID string) bool {
 		"--model-switcher-token '" + profileID + "'",
 		"--model-switcher-token \"" + profileID + "\"",
 	} {
-		if strings.Contains(value, suffix) {
+		if strings.HasSuffix(value, suffix) {
 			return true
 		}
 	}

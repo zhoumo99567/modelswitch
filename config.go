@@ -111,7 +111,7 @@ func setRoot(content, key string, value *string) (string, error) {
 	}
 	return result, nil
 }
-func localConfig(original []byte, profile storedProfile, helper string) ([]byte, error) {
+func localConfig(original []byte, profile storedProfile, helper string, profileFile ...string) ([]byte, error) {
 	content, err := removeManaged(string(original))
 	if err != nil {
 		return nil, err
@@ -139,7 +139,15 @@ func localConfig(original []byte, profile storedProfile, helper string) ([]byte,
 		if helper == "" {
 			return nil, errors.New("缺少凭据助手")
 		}
-		section += fmt.Sprintf("\n[model_providers.%s.auth]\ncommand = %s\nargs = [\"--model-switcher-token\", %s]\ntimeout_ms = 15000\nrefresh_interval_ms = 0\n", providerID, strconv.Quote(helper), strconv.Quote(profile.ID))
+		args := []string{"--model-switcher-token", profile.ID}
+		if len(profileFile) > 0 {
+			args = append(args, "--profiles", profileFile[0])
+		}
+		quotedArgs := make([]string, len(args))
+		for i, arg := range args {
+			quotedArgs[i] = strconv.Quote(arg)
+		}
+		section += fmt.Sprintf("\n[model_providers.%s.auth]\ncommand = %s\nargs = [%s]\ntimeout_ms = 15000\nrefresh_interval_ms = 0\n", providerID, strconv.Quote(helper), strings.Join(quotedArgs, ", "))
 	}
 	result := []byte(content + section + managedEnd + "\n")
 	if _, err = parseConfig(result); err != nil {

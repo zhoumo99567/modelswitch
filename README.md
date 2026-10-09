@@ -61,6 +61,8 @@ xattr -dr com.apple.quarantine ModelSwitcher.app
 5. 如果模型支持视觉输入，在 pi agent 配置中勾选“支持图像输入”。
 6. 点击“应用切换”，再使用“测试对话”验证当前协议、模型和 Key。
 
+复用配置时，在“服务连接”底部点击 **复制配置**，名称、API 地址、Key、选中模型和各模型的图像能力、上下文大小会复制到剪贴板。然后点击左侧“添加本地配置”下方的 **粘贴配置**，检查或修改新配置并保存。这些操作同时支持 ChatGPT / Codex 和 pi agent，也可在另一台电脑的 Model Switcher 中粘贴。
+
 ## 技能市场
 
 进入左侧 **技能管理 → 技能市场**：
@@ -103,7 +105,7 @@ Model Switcher 只管理本机文件，不会把配置文件上传到 Model Swit
 | 共享记忆 | `~/.agents/memory` | 全局记忆、项目记忆和自动生成的 `INDEX.md` |
 | 窗口状态 | 系统配置目录 `ModelSwitcher/window-state.json` | 窗口位置和大小 |
 
-设置页会显示程序本次实际读取的 `profiles.json` 路径。macOS 如果直接从带隔离属性的压缩包启动，系统可能使用 AppTranslocation 临时目录；把 App 移到实际目录后再启动即可避免配置位置变化。
+设置页会显示程序本次实际读取的 `profiles.json` 路径。macOS 解压后可直接从下载目录运行，无需移动到 `/Applications`：即使系统使用 AppTranslocation 临时目录，程序也会解析 App 的原始位置，优先读取和保存原始 App 同级的 `profiles.json`。如果原目录不可写（例如只读磁盘映像），则为这份 App 使用用户目录中的独立配置副本。凭据助手使用明确的配置路径，避免读取另一份配置中的 Key。
 
 共享记忆会保留已有的 `AGENTS.md`、`SYSTEM.md`、`APPEND_SYSTEM.md` 和 Agent 的 settings。已打开的 pi 会话在记忆或技能更新后执行 `/reload`，让新内容生效。
 

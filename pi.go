@@ -218,7 +218,7 @@ func (a *App) loadPiState(store storeFile) (AppState, error) {
 	}
 	return state, nil
 }
-func shellTokenCommand(executable, id string) (string, error) {
+func shellTokenCommand(executable, id string, profileFile ...string) (string, error) {
 	if !skillNamePattern.MatchString(id) {
 		return "", errors.New("配置标识不合法")
 	}
@@ -226,11 +226,22 @@ func shellTokenCommand(executable, id string) (string, error) {
 		if strings.ContainsAny(executable, "\"%\r\n") {
 			return "", errors.New("程序路径不支持凭据命令")
 		}
-		return "!\"" + executable + "\" --model-switcher-token " + id, nil
+		command := "!\"" + executable + "\" --model-switcher-token " + id
+		if len(profileFile) > 0 {
+			if strings.ContainsAny(profileFile[0], "\"%\r\n") {
+				return "", errors.New("配置文件路径不支持凭据命令")
+			}
+			command += " --profiles \"" + profileFile[0] + "\""
+		}
+		return command, nil
 	}
-	return "!'" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' --model-switcher-token '" + id + "'", nil
+	command := "!'" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' --model-switcher-token '" + id + "'"
+	if len(profileFile) > 0 {
+		command += " --profiles '" + strings.ReplaceAll(profileFile[0], "'", "'\"'\"'") + "'"
+	}
+	return command, nil
 }
-func piProfileObjects(models, settings map[string]json.RawMessage, p storedProfile, helper string) (map[string]json.RawMessage, error) {
+func piProfileObjects(models, settings map[string]json.RawMessage, p storedProfile, helper string, profileFile ...string) (map[string]json.RawMessage, error) {
 	providers := map[string]json.RawMessage{}
 	if len(models["providers"]) > 0 {
 		if err := json.Unmarshal(models["providers"], &providers); err != nil || providers == nil {
@@ -240,7 +251,7 @@ func piProfileObjects(models, settings map[string]json.RawMessage, p storedProfi
 	key := "model-switcher-local"
 	if p.Secret != "" || p.APIKey != "" {
 		var err error
-		key, err = shellTokenCommand(helper, p.ID)
+		key, err = shellTokenCommand(helper, p.ID, profileFile...)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +334,7 @@ func (a *App) activatePiProfile(store storeFile, p storedProfile) (AppState, err
 			return AppState{}, err
 		}
 	}
-	if _, err = piProfileObjects(models, settings, p, helper); err != nil {
+	if _, err = piProfileObjects(models, settings, p, helper, dataPath()); err != nil {
 		return AppState{}, err
 	}
 	store.PiBaseline.ProfileID = p.ID

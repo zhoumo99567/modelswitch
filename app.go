@@ -510,8 +510,17 @@ func credentialForInput(input ProfileInput, base string) (string, error) {
 	}
 	return "", nil
 }
-func tokenForProfile(id string) (string, error) {
-	store, err := readStore()
+func tokenForProfile(id string, profileFile ...string) (string, error) {
+	var store storeFile
+	var err error
+	if len(profileFile) > 0 {
+		if !filepath.IsAbs(profileFile[0]) {
+			return "", errors.New("凭据配置路径必须是绝对路径")
+		}
+		store, err = readStoreFile(profileFile[0])
+	} else {
+		store, err = readStore()
+	}
 	if err != nil {
 		return "", err
 	}
@@ -569,7 +578,7 @@ func (a *App) ActivateProfile(id string) (AppState, error) {
 			return AppState{}, errors.New("无法定位当前程序，未修改配置")
 		}
 	}
-	next, err := localConfig(original, *profile, helper)
+	next, err := localConfig(original, *profile, helper, dataPath())
 	if err != nil {
 		return AppState{}, err
 	}
@@ -744,18 +753,7 @@ func normalizeBaseURL(raw string) (string, error) {
 	return strings.TrimRight(u.String(), "/"), nil
 }
 func dataPath() string {
-	if executable, err := os.Executable(); err == nil {
-		dir := filepath.Dir(executable)
-		// A macOS .app stores the executable inside Contents/MacOS. Put the
-		// portable profile beside the app bundle instead of inside the bundle.
-		if runtime.GOOS == "darwin" {
-			if index := strings.Index(dir, ".app"+string(filepath.Separator)); index >= 0 {
-				dir = filepath.Dir(dir[:index+len(".app")])
-			}
-		}
-		return filepath.Join(dir, "profiles.json")
-	}
-	return legacyDataPath()
+	return currentProfilePaths().writable
 }
 
 // credentialHelperPath returns a stable executable for Codex's auth.command.
@@ -767,18 +765,13 @@ func credentialHelperPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Dir(executable)
-	name := "model-switcher-token"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	base := strings.ToLower(filepath.Base(executable))
-	if !strings.Contains(base, "-dev") && !strings.Contains(base, ".test") {
-		return executable, nil
-	}
-	target := filepath.Join(dir, name)
+	target := credentialHelperDestination(executable, runtime.GOOS, legacyDataPath())
 	if filepath.Clean(executable) == filepath.Clean(target) {
 		return target, nil
+	}
+	dir := filepath.Dir(target)
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
 	}
 	data, err := os.ReadFile(executable)
 	if err != nil {
@@ -816,6 +809,7 @@ func credentialHelperPath() (string, error) {
 	}
 	return target, nil
 }
+
 func legacyDataPath() string {
 	base, _ := os.UserConfigDir()
 	return filepath.Join(base, "ModelSwitcher", "profiles.json")
@@ -829,39 +823,36 @@ func configPath() string {
 }
 func readStore() (storeFile, error) {
 	for _, path := range profilePathCandidates() {
-		data, err := os.ReadFile(path)
+		store, err := readStoreFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
 			return storeFile{}, err
 		}
-		var s storeFile
-		if err = json.Unmarshal(data, &s); err != nil {
-			return s, fmt.Errorf("无法读取配置列表 %s: %w", path, err)
-		}
-		return s, nil
+		return store, nil
 	}
 	return storeFile{}, nil
 }
 
-// profilePathCandidates keeps the portable executable location first, then
-// accepts a profiles.json in the process working directory and the legacy
-// per-user location. The working-directory fallback is useful when macOS
-// launches a quarantined/translocated .app whose original bundle directory is
-// temporarily hidden from the process.
+func readStoreFile(path string) (storeFile, error) {
+	var store storeFile
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return store, err
+	}
+	if err = json.Unmarshal(data, &store); err != nil {
+		return store, fmt.Errorf("无法读取配置列表 %s: %w", path, err)
+	}
+	return store, nil
+}
+
+// Prefer the original app's sibling profile, unless it was migrated from a
+// read-only volume to that app's own writable fallback. Keep older locations
+// as read fallbacks; future writes use the same destination as auth commands.
 func profilePathCandidates() []string {
-	paths := []string{dataPath()}
-	if cwd, err := os.Getwd(); err == nil {
-		candidate := filepath.Join(cwd, "profiles.json")
-		if filepath.Clean(candidate) != filepath.Clean(paths[0]) {
-			paths = append(paths, candidate)
-		}
-	}
-	if legacy := legacyDataPath(); filepath.Clean(legacy) != filepath.Clean(paths[0]) {
-		paths = append(paths, legacy)
-	}
-	return paths
+	cwd, _ := os.Getwd()
+	return currentProfilePaths().candidates(cwd, legacyDataPath())
 }
 
 func profileStorePath() string {

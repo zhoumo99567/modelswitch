@@ -3,7 +3,7 @@
   "name": "ModelSwitcher",
   "outputfilename": "model-switcher",
   "info": {
-    "productVersion": "0.2.23"
+    "productVersion": "0.2.24"
   },
   "frontend:install": "npm ci",
   "frontend:build": "npm run build",

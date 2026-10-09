@@ -26,8 +26,12 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) == 3 && os.Args[1] == "--model-switcher-token" {
-		value, err := tokenForProfile(os.Args[2])
+	if (len(os.Args) == 3 || len(os.Args) == 5 && os.Args[3] == "--profiles") && os.Args[1] == "--model-switcher-token" {
+		var profileFile []string
+		if len(os.Args) == 5 {
+			profileFile = []string{os.Args[4]}
+		}
+		value, err := tokenForProfile(os.Args[2], profileFile...)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

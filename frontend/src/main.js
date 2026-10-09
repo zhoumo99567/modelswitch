@@ -3,6 +3,8 @@ import './app.css';
 import { renderResponse as markdownHTML } from './response-format.mjs';
 import { createPiChat } from './pi-chat';
 import { createEnvironmentManager } from './environment-ui.mjs';
+import { serializeProfile, parseProfile } from './profile-transfer.mjs';
+import { readClipboardText, writeClipboardText } from './clipboard.mjs';
 import { DetectEnvironment, StartDependencyInstall, GetDependencyInstallState } from '../wailsjs/go/main/App';
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime';
 import { LoadCLIState, LaunchCLI, ChooseCLIDirectory, LoadSkillMarketMetrics, ActivateOpenAI, ActivateProfile, ChooseChatGPTPath, DeleteProfile, FetchModels, TestModel, LoadState, LoadLocalSkillsState, SearchSkills, CleanSkills, RestoreSkill, SetTarget, InstallSkill, InstallSkillTo, DeleteSkill, CheckForUpdate, StartUpdate, OpenCodexDirectory, ReadConfigText, SaveProfile, SetChatGPTPath, WriteConfigText, LoadWorkspaceState, ChooseWorkspaceDirectory, SaveWorkspace, SelectWorkspace, DeleteWorkspace, LoadAgentConfig, ReadAgentDocument, WriteAgentDocument, LoadSharedSkillsState, OpenWorkspaceDirectory, OpenSharedSkillsDirectory, LoadAdvancedState, ReadRuntimeDocument, WriteRuntimeDocument, ReadMemory, WriteMemory, CreateMemory, DeleteMemory, OpenAdvancedDirectory } from '../wailsjs/go/main/App';
@@ -45,6 +47,7 @@ const paths = {
  eye: '<path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/>',
  eyeOff: '<path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.4 3.8M6.2 6.8C3.9 8.1 2.5 12 2.5 12s3.5 6 9.5 6c1.1 0 2.1-.2 3-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+ paste: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9M16 4h3a2 2 0 0 1 2 2v5M12 15h9m-3-3 3 3-3 3"/>',
 };
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
@@ -56,7 +59,7 @@ const formatContextWindow = (value) => {
 };
 const normalizeDraftModels = (models = []) => models.map((model) => ({ ...model, contextWindow: contextWindowValue(model.contextWindow) }));
 const emptyDraft = () => ({ id: '', name: '', baseUrl: '', apiKey: '', selectedModel: '', models: [], clearApiKey: false, hasApiKey: false });
-let state = { version: '0.2.23', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', profilePath: '', loadError: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
+let state = { version: '0.2.24', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', profilePath: '', loadError: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
 let draft = emptyDraft();
 let busy = '';
 let restoreFocusID = '';
@@ -94,7 +97,7 @@ let sidebarWidth = Number(localStorage.getItem('model-switcher-sidebar-width') |
 let resetPageScroll = false;
 const isPi = () => state.target === 'pi';
 const configName = () => isPi() ? 'models.json' : 'config.toml';
-let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.2.23', updateAvailable: false };
+let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.2.24', updateAvailable: false };
 let language = localStorage.getItem('model-switcher-language') || 'zh';
 let theme = localStorage.getItem('model-switcher-theme') || 'light';
 const app = document.querySelector('#app');
@@ -102,6 +105,13 @@ const piChat = createPiChat({ redraw: render, getState: () => state, getLanguage
 const environment = createEnvironmentManager({ detect: DetectEnvironment, startInstall: StartDependencyInstall, getInstallState: GetDependencyInstallState, redraw: render, getLanguage: () => language, icon, esc, onInstalled: async () => { if (page === 'cli') { await refreshCLI(false); render(); } } });
 
 const zhToEn = {
+ '复制配置': 'Copy profile', '粘贴配置': 'Paste profile', '正在复制…': 'Copying…', '正在粘贴…': 'Pasting…',
+ '复制连接信息、API Key 和模型设置': 'Copy the connection, API key, and model settings', '从剪贴板新建配置': 'Create a profile from the clipboard',
+ '配置已复制到剪贴板。': 'Profile copied to the clipboard.', '已粘贴为新配置，保存后即可使用。': 'Pasted as a new profile. Save it to use it.',
+ '无法写入剪贴板，请重试。': 'Could not write to the clipboard. Please retry.', '无法读取剪贴板，请允许剪贴板访问后重试。': 'Could not read the clipboard. Allow clipboard access and retry.',
+ '剪贴板为空，请先复制一个配置': 'The clipboard is empty. Copy a profile first.', '配置内容必须是文本': 'Profile content must be text.',
+ '配置不是有效的 JSON，请检查复制内容': 'The profile is not valid JSON. Check the copied content.', '请粘贴单个配置，不支持配置列表或 profiles.json': 'Paste a single profile, rather than a profile list or profiles.json.',
+ '配置必须是 JSON 对象': 'The profile must be a JSON object.', 'JSON 中没有模型配置字段，请复制一个模型配置': 'No model profile fields were found. Copy a model profile first.', 'models 必须是模型数组': 'models must be an array of models.',
  '对话': 'Conversation', '与当前 pi 模型进行多轮对话，实时查看回复。': 'Chat with the current pi model and watch replies as they arrive.',
  'pi agent 使用': 'pi agent uses', '模型与代理工作台': 'Models & agents workspace', '配置位置': 'Configuration location', '模型连接': 'Model connection',
  'CLI 启动器': 'CLI launcher', '展开或折叠 CLI 启动器': 'Expand or collapse CLI launcher', '选择工作目录，启动对应的命令行代理。': 'Choose a working folder and launch a command-line agent.', '启动 CLI': 'Launch CLI', '在系统终端中打开 Codex 或 pi agent。': 'Open Codex or pi agent in your system terminal.', '重新检测': 'Detect again', '工作目录': 'Working folder', '选择项目所在文件夹': 'Choose your project folder', 'CLI 会在这个目录中启动。': 'The CLI starts in this folder.', '选择目录': 'Choose folder', '已检测到': 'Detected', '未安装或未找到': 'Not installed or not found', '正在检测 CLI…': 'Detecting CLIs…',
@@ -184,6 +194,14 @@ function translateText(text) {
  if (switched) return text.replace(trimmed, 'Switched to “' + switched[1] + '”; ChatGPT is restarting.');
  const target = trimmed.match(/^切换到 (.+)$/);
  if (target) return text.replace(trimmed, 'Switch to ' + target[1]);
+ const modelObject = trimmed.match(/^第 (\d+) 个模型必须是对象$/);
+ if (modelObject) return text.replace(trimmed, 'Model ' + modelObject[1] + ' must be an object.');
+ const modelID = trimmed.match(/^第 (\d+) 个模型必须包含非空字符串 id$/);
+ if (modelID) return text.replace(trimmed, 'Model ' + modelID[1] + ' must include a non-empty string id.');
+ const fieldType = trimmed.match(/^(.+) 必须是(字符串|布尔值)$/);
+ if (fieldType) return text.replace(trimmed, fieldType[1] + ' must be ' + (fieldType[2] === '字符串' ? 'a string.' : 'a boolean.'));
+ const contextSize = trimmed.match(/^(.+) 必须是正整数，未设置时可省略或填写 0$/);
+ if (contextSize) return text.replace(trimmed, contextSize[1] + ' must be a positive integer. Omit it or use 0 for the default.');
  return text;
 }
 function localizeDOM() {
@@ -366,7 +384,7 @@ async function navigatePage(next, section = skillSection) {
 function renderUpdateManager() {
  const available = updateState.updateAvailable;
  const status = updateState.status === 'error' ? 'is-error' : available ? 'is-available' : '';
- return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.2.23') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
+ return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.2.24') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
 }
 
 function sidebarBounds() {
@@ -408,7 +426,7 @@ function renderSidebar(disabled, title) {
  return `<aside class="sidebar" id="sidebar"><div class="brand"><div class="brand-mark">${icon('route', 30)}</div><div><div class="brand-name">Model Switcher</div><div class="brand-caption">模型与代理工作台</div></div></div>
  <nav class="sidebar-nav" aria-label="主导航"><div class="nav-caption">工作空间</div><ul class="nav-tree"><li><div class="nav-group-heading ${workspaceActive ? 'active' : ''}"><button class="nav-group-link" data-page="workspace" ${disabled}>${icon('briefcase',18)}<span>工作区</span>${workspaceState.projects.length ? `<span class="nav-count">${workspaceState.projects.length}</span>` : ''}</button></div></li>
  <li><div class="nav-group-heading ${modelActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-models" data-toggle-section="models" aria-label="展开或折叠模型设置" aria-expanded="${treeExpanded.models}" aria-controls="model-nav">${icon(treeExpanded.models ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="models" ${disabled}>${icon('server', 18)}<span>模型设置</span><span class="nav-count">${state.profiles.length}</span></button></div>
- <ul class="nav-children" id="model-nav" ${treeExpanded.models ? '' : 'hidden'}>${profiles}<li><button class="nav-child nav-add ${modelActive && !draft.id ? 'selected' : ''}" id="new" ${disabled}>${icon('plus', 16)}<span>添加本地配置</span></button></li></ul></li>
+ <ul class="nav-children" id="model-nav" ${treeExpanded.models ? '' : 'hidden'}>${profiles}<li><button class="nav-child nav-add ${modelActive && !draft.id ? 'selected' : ''}" id="new" ${disabled}>${icon('plus', 16)}<span>添加本地配置</span></button></li><li class="nav-paste"><button class="nav-child" id="paste-profile" title="从剪贴板新建配置" ${disabled}>${icon('paste', 16)}<span>${busy === 'profile-paste' ? '正在粘贴…' : '粘贴配置'}</span></button></li></ul></li>
  ${isPi() ? `<li><div class="nav-group-heading ${page === 'chat' ? 'active' : ''}"><button class="nav-group-link chat-nav-link" data-page="chat" ${page === 'chat' ? 'aria-current="page"' : ''} ${disabled}>${icon('chat', 18)}<span>对话</span></button></div></li>` : ''}
  <li><div class="nav-group-heading ${skillActive ? 'active' : ''}"><button class="nav-disclosure" id="toggle-skills" data-toggle-section="skills" aria-label="展开或折叠技能管理" aria-expanded="${treeExpanded.skills}" aria-controls="skill-nav">${icon(treeExpanded.skills ? 'chevronDown' : 'chevronRight', 15)}</button><button class="nav-group-link" data-page="skills" ${disabled}>${icon('spark', 18)}<span>技能管理</span></button></div>
  <ul class="nav-children" id="skill-nav" ${treeExpanded.skills ? '' : 'hidden'}>${sections.map(([id, symbol, label]) => `<li><button class="nav-child ${skillActive && skillSection === id ? 'selected' : ''}" data-skill-section="${id}" ${skillActive && skillSection === id ? 'aria-current="page"' : ''} ${disabled}>${icon(symbol, 16)}<span>${label}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${page==='cli'?'active':''}"><button class="nav-disclosure" id="toggle-cli" data-toggle-section="cli" aria-label="展开或折叠 CLI 启动器" aria-expanded="${treeExpanded.cli}" aria-controls="cli-nav">${icon(treeExpanded.cli?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="cli" ${disabled}>${icon('terminal',18)}<span>CLI 启动器</span></button></div><ul class="nav-children" id="cli-nav" ${treeExpanded.cli?'':'hidden'}>${[[isPi() ? 'pi' : 'codex', isPi() ? 'pi CLI' : 'Codex CLI']].map(([id,name])=>`<li><button id="nav-cli-${id}" class="nav-child ${page==='cli'&&selectedCLI===id?'selected':''}" data-cli-nav="${id}" ${disabled}>${icon('terminal',16)}<span>${name}</span></button></li>`).join('')}</ul></li><li><div class="nav-group-heading ${advancedActive?'active':''}"><button class="nav-disclosure" id="toggle-advanced" data-toggle-section="advanced" aria-label="展开或折叠高级设置" aria-expanded="${treeExpanded.advanced}" aria-controls="advanced-nav">${icon(treeExpanded.advanced?'chevronDown':'chevronRight',15)}</button><button class="nav-group-link" data-page="advanced" ${disabled}>${icon('sliders',18)}<span>高级设置</span></button></div><ul class="nav-children" id="advanced-nav" ${treeExpanded.advanced?'':'hidden'}>${[['memory','brain','记忆管理'],['mcp','plug','MCP 配置'],['settings','sliders','运行参数']].map(([id,symbol,label])=>`<li><button class="nav-child ${advancedActive && advancedSection === id ? 'selected' : ''}" data-advanced-section="${id}" ${disabled}>${icon(symbol,16)}<span>${label}</span></button></li>`).join('')}</ul></li></ul></nav>
@@ -425,7 +443,7 @@ function renderModelPage(disabled, title) {
  <label class="field"><span>配置名称</span><input id="name" placeholder="例如：我的 LM Studio" value="${esc(draft.name)}" maxlength="80" ${disabled}></label>
  <label class="field"><span>API 地址</span><input id="url" type="url" placeholder="http://127.0.0.1:1234/v1" value="${esc(draft.baseUrl)}" ${disabled}><small>支持本机、局域网和远程 OpenAI 兼容服务。</small></label>
  <label class="field"><span>API Key <em>可选</em></span><div class="secret-field"><input id="key" type="${keyVisible ? 'text' : 'password'}" autocomplete="off" value="${esc(draft.apiKey)}" placeholder="${draft.hasApiKey && !draft.apiKey ? 'Key 已保存但无法读取，请重新填写' : '服务无需认证时可留空'}" ${disabled}><div class="secret-actions"><button type="button" class="icon-button" id="key-toggle" aria-label="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" title="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" ${disabled}>${icon(keyVisible ? 'eyeOff' : 'eye', 16)}</button><button type="button" class="icon-button" id="key-copy" aria-label="复制 API Key" title="复制 API Key" ${disabled || !draft.apiKey ? 'disabled' : ''}>${icon('copy', 16)}</button></div></div><small>Key 直接保存在 profiles.json，界面默认隐藏；可显示或复制。</small></label>
- ${draft.hasApiKey ? `<label class="clear-key"><input id="clear-key" type="checkbox" ${draft.clearApiKey ? 'checked' : ''} ${disabled}>移除已保存的 Key</label>` : ''}</div><div class="form-actions"><button class="button button-secondary" id="save" ${disabled}>${icon('save', 16)}${busy === 'save' ? '正在保存…' : '保存'}</button><button class="button button-secondary" id="fetch" ${disabled}>${icon('refresh', 16)}${busy === 'fetch' ? '正在获取…' : '获取模型'}</button></div></section>
+ ${draft.hasApiKey ? `<label class="clear-key"><input id="clear-key" type="checkbox" ${draft.clearApiKey ? 'checked' : ''} ${disabled}>移除已保存的 Key</label>` : ''}</div><div class="form-actions"><button class="button button-secondary" id="save" ${disabled}>${icon('save', 16)}${busy === 'save' ? '正在保存…' : '保存'}</button><button class="button button-secondary" id="fetch" ${disabled}>${icon('refresh', 16)}${busy === 'fetch' ? '正在获取…' : '获取模型'}</button><button class="button button-secondary" id="copy-profile" title="复制连接信息、API Key 和模型设置" ${disabled}>${icon('copy', 16)}${busy === 'profile-copy' ? '正在复制…' : '复制配置'}</button></div></section>
  <section class="panel model-panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>选择模型</h3></div><span class="muted-label">${draft.models.length} 个可用</span></div><div class="model-selection-grid"><label class="field"><span>使用的模型</span><select id="model" ${disabled}${draft.models.length ? '' : ' disabled'}><option value="">${draft.models.length ? '选择一个模型' : '等待获取模型列表'}</option>${draft.models.map((m) => `<option value="${esc(m.id)}" ${m.id === draft.selectedModel ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}</select></label><label class="field"><span>上下文大小</span><div class="context-window-input"><input id="model-context-window" type="number" min="1024" step="1024" value="${contextWindowValue(selected?.contextWindow)}" ${disabled}${draft.selectedModel ? '' : ' disabled'}><span>tokens</span></div><small>默认 256K；应用后由当前模型直接使用。</small></label></div>
  ${isPi() ? `<div class="model-capability"><label><input id="model-images" type="checkbox" ${selected?.supportsImages ? 'checked' : ''} ${disabled}${draft.selectedModel ? '' : ' disabled'}>支持图像输入</label><small>仅在模型和 API 支持图像时启用。</small></div>` : ''}<div class="model-list">${rows}</div><p class="model-hint">${isPi() ? 'pi agent 使用 <strong>/v1/chat/completions</strong>' : '接入 Codex 需要兼容 <strong>/v1/responses</strong>'}</p></section></div>
  ${isPi() ? `<section class="connection-details"><strong>配置位置</strong><code>${esc(state.configPath)}</code><small>切换后在 pi 中使用 /model 选择模型；新会话使用已保存的默认模型。技能安装后使用 /reload。</small></section>` : `<section class="connection-details"><div class="path-heading"><label id="chatgpt-path-label">ChatGPT 路径</label><span class="muted-label">${state.chatGptTarget ? '手动选择' : '自动查找'}</span><button class="text-button" id="auto-target" ${disabled}>${icon('search', 15)}自动查找</button></div><button id="chatgpt-target" class="target-picker" aria-labelledby="chatgpt-path-label" ${disabled}>${icon('folder', 17)}<span>${esc(state.chatGptResolvedTarget || state.chatGptTarget || '未找到 ChatGPT，点击选择应用')}</span></button>${state.chatGptTargetError ? `<small class="is-error">${esc(state.chatGptTargetError)}</small>` : ''}</section>`}
@@ -486,12 +504,7 @@ function bind() {
  on('key-copy', 'click', async () => {
   if (!draft.apiKey) return;
   try {
-   if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(draft.apiKey);
-   else {
-    const helper = document.createElement('textarea'); helper.value = draft.apiKey; helper.style.position = 'fixed'; helper.style.opacity = '0'; document.body.appendChild(helper); helper.select();
-    if (!document.execCommand('copy')) throw new Error('copy failed');
-    helper.remove();
-   }
+   await writeClipboardText(draft.apiKey);
    message = 'API Key 已复制。'; error = ''; render();
   } catch { error = '无法复制 API Key，请手动选择后复制。'; render(); }
  });
@@ -509,6 +522,18 @@ function bind() {
  on('activate-current', 'click', () => run('activate', async () => { if (dirty || !draft.id) await save(); state = await ActivateProfile(draft.id); message = isPi() ? 'pi 默认模型已保存；在 pi 中使用 /model 选择模型或开启新会话。' : '已切换到「' + draft.name + '」，ChatGPT 正在重启。'; }));
  on('model-images', 'change', (e) => { draft.models = draft.models.map((m) => m.id === draft.selectedModel ? { ...m, supportsImages: e.target.checked } : m); dirty = true; render(); });
  on('new', 'click', () => { page = 'models'; treeExpanded.models = true; resetPageScroll = true; edit(); });
+ on('copy-profile', 'click', () => run('profile-copy', async () => {
+  await writeClipboardText(serializeProfile(draft));
+  message = '配置已复制到剪贴板。';
+ }));
+ on('paste-profile', 'click', () => run('profile-paste', async () => {
+  const profile = parseProfile(await readClipboardText());
+  page = 'models'; treeExpanded.models = true; resetPageScroll = true;
+  draft = profile; dirty = true; keyVisible = false;
+  modelTestReply = ''; modelTestModel = ''; modelTestProtocol = '';
+  message = '已粘贴为新配置，保存后即可使用。';
+  restoreFocusID = 'name';
+ }));
  on('settings', 'click', () => { settingsOpen = true; render(); run('settings-load', async () => { updateState = await CheckForUpdate(); }); });
  on('settings-close', 'click', () => { settingsOpen = false; render(); document.getElementById('settings')?.focus(); });
  on('skills-refresh', 'click', () => run('skills', refreshSkills));
@@ -607,7 +632,7 @@ async function run(action, fn) {
  if (busy) return;
  restoreFocusID = document.activeElement?.id || '';
  busy = action; error = ''; message = ''; render();
- try { await fn(); } catch (e) { error = e?.message || String(e); if (action !== 'load') { try { state = await withTimeout(LoadState(), 8000, '刷新当前状态超时'); loaded = true; } catch {} } }
+ try { await fn(); } catch (e) { error = e?.message || String(e); if (!['load', 'profile-copy', 'profile-paste'].includes(action)) { try { state = await withTimeout(LoadState(), 8000, '刷新当前状态超时'); loaded = true; } catch {} } }
  finally { busy = ''; render(); }
 }
 document.addEventListener('keydown', (e) => {

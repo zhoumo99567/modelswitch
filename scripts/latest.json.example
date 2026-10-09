@@ -1,11 +1,11 @@
 {
-  "version": "0.2.23",
+  "version": "0.2.24",
   "windows": {
-    "url": "https://downloads.example.com/model-switcher/0.2.23/ModelSwitcher-0.2.23-windows-amd64.exe",
+    "url": "https://downloads.example.com/model-switcher/0.2.24/ModelSwitcher-0.2.24-windows-amd64.exe",
     "sha256": "replace-with-sha256"
   },
   "macos": {
-    "url": "https://downloads.example.com/model-switcher/0.2.23/ModelSwitcher-0.2.23-macos-universal.app.zip",
+    "url": "https://downloads.example.com/model-switcher/0.2.24/ModelSwitcher-0.2.24-macos-universal.app.zip",
     "sha256": "replace-with-sha256"
   }
 }

@@ -151,10 +151,16 @@ func TestNodeTarLinksStayInsideInstallation(t *testing.T) {
 }
 
 func TestManagedDependenciesAreFoundAndPropagatedToChildren(t *testing.T) {
+	testHome := t.TempDir()
 	if runtime.GOOS != "windows" {
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		// os.UserConfigDir uses ~/Library/Application Support on macOS and
+		// does not honor XDG_CONFIG_HOME there. Keep the fixture out of the
+		// real user's ModelSwitcher/tools directory on every desktop OS.
+		t.Setenv("HOME", testHome)
+		t.Setenv("XDG_CONFIG_HOME", testHome)
 	} else {
-		t.Setenv("APPDATA", t.TempDir())
+		t.Setenv("APPDATA", testHome)
+		t.Setenv("USERPROFILE", testHome)
 	}
 	root := managedToolsRoot()
 	runtimeDir := filepath.Join(root, "runtimes", "v24.9.0-123")

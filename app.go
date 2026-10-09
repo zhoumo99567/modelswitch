@@ -42,7 +42,33 @@ type Model struct {
 	ID             string `json:"id"`
 	OwnedBy        string `json:"owned_by,omitempty"`
 	SupportsImages bool   `json:"supportsImages,omitempty"`
+	ContextWindow  int    `json:"contextWindow,omitempty"`
 }
+
+// Models use a generous default so long-running agent conversations can be
+// compacted by the runtime before they hit the provider's context limit. Each
+// model can override this value from the model settings page.
+const defaultModelContextWindow = 256 * 1024
+
+func normalizedModelContextWindow(value int) int {
+	if value <= 0 {
+		return defaultModelContextWindow
+	}
+	return value
+}
+
+func normalizeModels(models []Model) []Model {
+	if models == nil {
+		return []Model{}
+	}
+	result := make([]Model, len(models))
+	copy(result, models)
+	for i := range result {
+		result[i].ContextWindow = normalizedModelContextWindow(result[i].ContextWindow)
+	}
+	return result
+}
+
 type ModelTestResult struct {
 	Model    string `json:"model"`
 	Reply    string `json:"reply"`
@@ -161,6 +187,7 @@ func (a *App) loadState() (AppState, error) {
 		if v.Models == nil {
 			v.Models = []Model{}
 		}
+		v.Models = normalizeModels(v.Models)
 		result.Profiles = append(result.Profiles, v)
 		if provider == providerID && configuredProfileID(config) == p.ID {
 			result.ActiveProfileID = p.ID
@@ -217,7 +244,7 @@ func (a *App) SaveProfile(input ProfileInput) (AppState, error) {
 		secret = ""
 		apiKey = ""
 	}
-	p := storedProfile{ProfileView: ProfileView{ID: id, Name: strings.TrimSpace(input.Name), BaseURL: base, APIKey: apiKey, SelectedModel: input.SelectedModel, Models: input.Models}, Secret: secret}
+	p := storedProfile{ProfileView: ProfileView{ID: id, Name: strings.TrimSpace(input.Name), BaseURL: base, APIKey: apiKey, SelectedModel: input.SelectedModel, Models: normalizeModels(input.Models)}, Secret: secret}
 	if index < 0 {
 		store.Profiles = append(store.Profiles, p)
 	} else {
@@ -305,6 +332,7 @@ func (a *App) FetchModels(input ProfileInput) ([]Model, error) {
 	seen := map[string]bool{}
 	for _, m := range decoded.Data {
 		if strings.TrimSpace(m.ID) != "" && !seen[m.ID] {
+			m.ContextWindow = normalizedModelContextWindow(m.ContextWindow)
 			models = append(models, m)
 			seen[m.ID] = true
 		}

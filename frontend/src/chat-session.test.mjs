@@ -55,6 +55,21 @@ test('follow-up messages wait for the current reply, preserve FIFO, and can be d
  assert.equal(session.queue.length, 0); assert.equal(session.messages.length, 6);
 });
 
+test('intermediate tool rounds do not mark the final reply as empty', () => {
+ const session = new ChatSession({ text: (zh) => zh });
+ session.agent = { state: { messages: [] } };
+ const entry = createChatEntry('inspect the page');
+ session.entries.set(entry.message, entry);
+ session.handleEvent({ type: 'message_start', message: entry.message });
+ for (let index = 0; index < 12; index++) {
+  session.handleEvent({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'toolCall', name: `browser-${index}` }], stopReason: 'toolUse' } });
+  assert.equal(session.messages[1].status, undefined);
+ }
+ session.handleEvent({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'The page is ready.' }], stopReason: 'stop' } });
+ assert.equal(session.messages[1].content, 'The page is ready.');
+ assert.equal(session.messages[1].status, '');
+});
+
 test('steering interrupts now, retains partial context, and takes priority over follow-ups', async () => {
  const { session, requests, restored, wait } = fixture();
  session.enqueue(createChatEntry('first')); await wait(1);

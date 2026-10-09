@@ -210,6 +210,7 @@ func (a *App) loadPiState(store storeFile) (AppState, error) {
 		if v.Models == nil {
 			v.Models = []Model{}
 		}
+		v.Models = normalizeModels(v.Models)
 		state.Profiles = append(state.Profiles, v)
 		if provider == providerID && managed.Name == "ModelSwitcher / "+p.ID {
 			state.ActiveProfileID = p.ID
@@ -252,7 +253,7 @@ func piProfileObjects(models, settings map[string]json.RawMessage, p storedProfi
 			if m.SupportsImages {
 				input = append(input, "image")
 			}
-			entries = append(entries, map[string]any{"id": m.ID, "name": m.ID, "reasoning": false, "input": input, "contextWindow": 32768, "maxTokens": 4096, "cost": map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}})
+			entries = append(entries, map[string]any{"id": m.ID, "name": m.ID, "reasoning": false, "input": input, "contextWindow": normalizedModelContextWindow(m.ContextWindow), "maxTokens": 4096, "cost": map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}})
 			seen[m.ID] = true
 		}
 	}

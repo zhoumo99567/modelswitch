@@ -10,8 +10,9 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
  let issue = '', note = '', signature = '', generation = 0, frame = 0, followBottom = true, scrollTop = 0;
  let attachments = [], reading = 0, attachmentGeneration = 0, attachmentQueue = Promise.resolve(), filePasteVersion = 0, nativePasteTimer;
  let queueMenuId = '', queueEditId = '', queueEditText = '', resumeAfterEdit = false;
- let runtimeInfo = null, runtimeDialogs = [], showResources = false;
- const runtimeStatuses = new Map(), runtimeWidgets = new Map();
+ let runtimeInfo = null, runtimeDialogs = [], runtimeDiagnostics = [], showResources = false;
+ const runtimeStatuses = new Map(), runtimeWidgets = new Map(), detailStates = new Map();
+ const captureDetails = () => document.getElementById('chat-messages')?.querySelectorAll('details[id]').forEach((el) => detailStates.set(el.id, el.open));
  const text = (zh, en) => getLanguage() === 'en' ? en : zh;
  const canSend = () => config && !loading && !reading && (input.trim() || attachments.length);
  const session = new ChatSession({
@@ -88,8 +89,9 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
   nativePasteTimer = setTimeout(() => { void pasteNativeFiles(version); }, 0);
  };
  const reset = (notice = '', preserveQueue = true) => {
+  detailStates.clear();
   generation++; queueMenuId = ''; queueEditId = ''; resumeAfterEdit = false;
-  runtimeInfo = null; runtimeDialogs = []; showResources = false; runtimeStatuses.clear(); runtimeWidgets.clear();
+  runtimeInfo = null; runtimeDialogs = []; runtimeDiagnostics = []; showResources = false; runtimeStatuses.clear(); runtimeWidgets.clear();
   issue = ''; note = notice; followBottom = true; scrollTop = 0;
   session.reset(preserveQueue);
  };
@@ -119,18 +121,59 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
   } catch (err) { if (current === generation) { config = null; issue = err?.message || String(err); } }
   finally { if (current === generation || config) { loading = false; redraw(); } }
  };
- const messageHTML = () => messages.map((m, index) => `<article class="chat-message ${m.role}" data-no-translate><div class="chat-message-label">${m.role === 'user' ? text('你', 'You') : 'pi agent'}</div>${attachmentHTML(m.attachments || [])}${m.content || m.role === 'assistant' ? `<div class="chat-message-content ${m.role === 'assistant' ? 'model-test-markdown' : ''}">${m.role === 'assistant' ? (m.content ? markdown(m.content) : m.status ? '' : `<span class="chat-waiting">${text('正在思考…', 'Thinking…')}</span>`) : esc(m.content)}</div>` : ''}${m.thinking ? `<details class="chat-thinking" id="chat-thinking-${index}"><summary>${text('思考过程', 'Reasoning')}</summary><div>${esc(m.thinking)}</div></details>` : ''}${m.status ? `<small class="chat-message-status">${esc(m.status)}</small>` : ''}</article>`).join('');
+ const toolValueText = (value, limit = 5000) => {
+  if (value === undefined || value === null || value === '') return '';
+  let raw;
+  if (typeof value === 'string') raw = value;
+  else if (Array.isArray(value?.content)) {
+   const parts = value.content.map((part) => part?.type === 'text' ? part.text : part?.type ? `[${part.type}]` : '').filter(Boolean);
+   raw = parts.join('\n') || '';
+  }
+  if (!raw) {
+   try { raw = JSON.stringify(value, null, 2); } catch { raw = String(value); }
+  }
+  return raw.length > limit ? `${raw.slice(0, limit)}\n… ${text('内容已截断', 'content truncated')}` : raw;
+ };
+ const formatDuration = (durationMs) => {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return '';
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  if (seconds < 60) return text(`用时 ${seconds} 秒`, `${seconds}s`);
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return text(`用时 ${minutes} 分钟${remainder ? ` ${remainder} 秒` : ''}`, `${minutes}m${remainder ? ` ${remainder}s` : ''}`);
+ };
+ const toolStatus = (tool) => tool.running ? text('执行中', 'Running') : tool.error ? text('失败', 'Failed') : text('已完成', 'Done');
+ const toolHTML = (tool, messageIndex, toolIndex) => {
+  const id = `chat-tool-${messageIndex}-${toolIndex}`;
+  const input = toolValueText(tool.input);
+  const output = toolValueText(tool.output);
+  const error = tool.detail && tool.detail !== output ? tool.detail : '';
+  const body = [
+   input ? `<section class="chat-tool-section"><h4>${text('参数', 'Arguments')}</h4><pre>${esc(input)}</pre></section>` : '',
+   output ? `<section class="chat-tool-section"><h4>${text('返回结果', 'Result')}</h4><pre>${esc(output)}</pre></section>` : '',
+   error ? `<section class="chat-tool-section is-error"><h4>${text('错误', 'Error')}</h4><pre>${esc(error)}</pre></section>` : '',
+   !input && !output && !error ? `<p class="chat-tool-empty">${text('暂无可显示的详细信息', 'No detail available')}</p>` : '',
+  ].join('');
+  const open = detailStates.get(id) ?? !!tool.error;
+  return `<details id="${id}" class="chat-tool-item ${tool.error ? 'is-error' : ''}" ${open ? 'open' : ''}><summary><span class="chat-tool-summary"><span class="chat-tool-state ${tool.running ? 'is-running' : tool.error ? 'is-error' : 'is-done'}" aria-hidden="true"></span><span><strong>${esc(tool.name || text('未命名工具', 'Unnamed tool'))}</strong><small>${toolStatus(tool)}</small></span></span><span class="chat-tool-chevron" aria-hidden="true">›</span></summary><div class="chat-tool-item-body">${body}</div></details>`;
+ };
+ const messageHTML = () => messages.map((m, index) => `<article class="chat-message ${m.role}" data-no-translate><div class="chat-message-label">${m.role === 'user' ? text('你', 'You') : 'pi agent'}</div>${attachmentHTML(m.attachments || [])}${m.content || m.role === 'assistant' ? `<div class="chat-message-content ${m.role === 'assistant' ? 'model-test-markdown' : ''}">${m.role === 'assistant' ? (m.content ? markdown(m.content) : m.status ? '' : `<span class="chat-waiting">${text('正在思考…', 'Thinking…')}</span>`) : esc(m.content)}</div>` : ''}${m.thinking ? `<details class="chat-thinking" id="chat-thinking-${index}" ${detailStates.get(`chat-thinking-${index}`) ? 'open' : ''}><summary>${text('思考过程', 'Reasoning')}</summary><div>${esc(m.thinking)}</div></details>` : ''}${m.status ? `<small class="chat-message-status">${esc(m.status)}</small>` : ''}</article>`).join('');
  const paint = () => {
   const list = document.getElementById('chat-messages');
   if (!list) return;
-  const opened = [...list.querySelectorAll('details[open]')].map((el) => el.id);
+  captureDetails();
   list.innerHTML = messageHTML();
   messages.forEach((message, index) => {
    if (!message.tools?.length) return;
    const article = list.querySelectorAll('.chat-message')[index];
-   article?.insertAdjacentHTML('beforeend', `<details class="chat-thinking chat-tool-list"><summary>${text('工具调用', 'Tool calls')} (${message.tools.length})</summary><div>${message.tools.map((tool) => `${esc(tool.name)} · ${tool.running ? text('执行中', 'Running') : tool.error ? text('失败', 'Failed') : text('完成', 'Done')}`).join('<br>')}</div></details>`);
+   const running = message.tools.filter((tool) => tool.running).length;
+   const failed = message.tools.filter((tool) => tool.error).length;
+   const overall = running ? text(`${running} 个执行中`, `${running} running`) : failed ? text(`${failed} 个失败`, `${failed} failed`) : text('全部完成', 'All done');
+   const elapsed = message.toolsStartedAt ? (message.toolsFinishedAt || Date.now()) - message.toolsStartedAt : 0;
+   const meta = formatDuration(elapsed) || overall;
+   article?.insertAdjacentHTML('beforeend', `<details id="chat-tools-${index}" ${detailStates.get(`chat-tools-${index}`) ? 'open' : ''} class="chat-thinking chat-tool-list"><summary><span class="chat-tool-list-heading"><span class="chat-tool-list-icon" aria-hidden="true">↳</span><span>${text('工具调用', 'Tool calls')} <b>${message.tools.length}</b></span></span><small>${meta}${meta !== overall ? ` · ${overall}` : ''}</small></summary><div class="chat-tool-items">${message.tools.map((tool, toolIndex) => toolHTML(tool, index, toolIndex)).join('')}</div></details>`);
   });
-  opened.forEach((id) => { const el = document.getElementById(id); if (el) el.open = true; });
+  list.querySelectorAll('details[id]').forEach((el) => el.addEventListener('toggle', () => { if (el.isConnected) detailStates.set(el.id, el.open); }));
   if (followBottom) list.scrollTop = list.scrollHeight;
  };
  const schedulePaint = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paint(); }); };
@@ -147,6 +190,10 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
     if (event.type === 'notice') note = event.message || '';
     if (event.type === 'status') { if (event.text) runtimeStatuses.set(event.key, event.text); else runtimeStatuses.delete(event.key); }
     if (event.type === 'widget') { if (event.lines) runtimeWidgets.set(event.key, event.lines.join('\n')); else runtimeWidgets.delete(event.key); }
+    if (event.type === 'diagnostic' || event.type === 'recovery') {
+     const summary = event.type === 'recovery' ? `${text('自动续跑', 'Recovery')} ${event.attempt}/${event.maxAttempts}` : `${event.stage || 'runtime'}${event.stopReason ? ` · ${event.stopReason}` : ''}${event.toolName ? ` · ${event.toolName}` : ''}${event.result ? ` · ${event.result}` : ''}`;
+     runtimeDiagnostics = [...runtimeDiagnostics.slice(-63), summary];
+    }
     if (event.type === 'editor_text') input = event.text || '';
     if (event.type === 'resources') runtimeInfo = event.info;
     if (event.type === 'closed') { runtimeDialogs = []; issue = event.message; }
@@ -165,7 +212,7 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
   const dialog = runtimeDialogs[0];
   if (!dialog && !showResources) return '';
   const title = dialog?.title || text('全局资源', 'Global resources');
-  const content = dialog ? `${dialog.message ? `<p>${esc(dialog.message)}</p>` : ''}${dialog.method === 'select' ? `<select id="chat-extension-value">${dialog.options.map((option) => `<option value="${esc(option)}" ${dialog.value === option ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>` : ['input', 'editor'].includes(dialog.method) ? `<textarea id="chat-extension-value" rows="${dialog.method === 'editor' ? 5 : 2}" placeholder="${esc(dialog.placeholder || '')}">${esc(dialog.value ?? dialog.prefill ?? '')}</textarea>` : ''}` : `<p class="chat-resource-path">${esc(runtimeInfo?.agentDir || '')}</p><h3>Skills (${runtimeInfo?.skills.length || 0})</h3><ul>${(runtimeInfo?.skills || []).map((skill) => `<li><strong>${esc(skill.name)}</strong><small>${esc(skill.path)}</small></li>`).join('')}</ul><h3>Extensions (${runtimeInfo?.extensions.length || 0})</h3><ul>${(runtimeInfo?.extensions || []).map((path) => `<li>${esc(path)}</li>`).join('')}</ul><h3>${text('工具', 'Tools')}</h3><p>${esc((runtimeInfo?.tools || []).join(', '))}</p>${runtimeInfo?.diagnostics.length ? `<h3>${text('加载提示', 'Loading diagnostics')}</h3><ul class="is-error">${runtimeInfo.diagnostics.map((message) => `<li>${esc(message)}</li>`).join('')}</ul>` : ''}`;
+  const content = dialog ? `${dialog.message ? `<p>${esc(dialog.message)}</p>` : ''}${dialog.method === 'select' ? `<select id="chat-extension-value">${dialog.options.map((option) => `<option value="${esc(option)}" ${dialog.value === option ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>` : ['input', 'editor'].includes(dialog.method) ? `<textarea id="chat-extension-value" rows="${dialog.method === 'editor' ? 5 : 2}" placeholder="${esc(dialog.placeholder || '')}">${esc(dialog.value ?? dialog.prefill ?? '')}</textarea>` : ''}` : `<p class="chat-resource-path">${esc(runtimeInfo?.agentDir || '')}</p><h3>Skills (${runtimeInfo?.skills.length || 0})</h3><ul>${(runtimeInfo?.skills || []).map((skill) => `<li><strong>${esc(skill.name)}</strong><small>${esc(skill.path)}</small></li>`).join('')}</ul><h3>Extensions (${runtimeInfo?.extensions.length || 0})</h3><ul>${(runtimeInfo?.extensions || []).map((path) => `<li>${esc(path)}</li>`).join('')}</ul><h3>${text('工具', 'Tools')}</h3><p>${esc((runtimeInfo?.tools || []).join(', '))}</p>${runtimeInfo?.diagnostics.length ? `<h3>${text('加载提示', 'Loading diagnostics')}</h3><ul class="is-error">${runtimeInfo.diagnostics.map((message) => `<li>${esc(message)}</li>`).join('')}</ul>` : ''}${runtimeInfo?.logPath ? `<h3>${text('运行日志', 'Runtime log')}</h3><p class="chat-resource-path">${esc(runtimeInfo.logPath)}</p>${runtimeDiagnostics.length ? `<ul class="chat-runtime-log-events">${runtimeDiagnostics.slice(-12).map((event) => `<li>${esc(event)}</li>`).join('')}</ul>` : ''}` : ''}`;
   return `<div class="chat-runtime-overlay"><section class="chat-runtime-modal" role="dialog" aria-modal="true" aria-labelledby="chat-runtime-title"><header><h2 id="chat-runtime-title">${esc(title)}</h2><button type="button" id="chat-extension-close" aria-label="${text('关闭', 'Close')}">${icon('close', 18)}</button></header><div class="chat-runtime-body">${content}</div>${dialog ? `<footer><button type="button" class="button button-secondary" id="chat-extension-cancel">${text('取消', 'Cancel')}</button><button type="button" class="button button-primary" id="chat-extension-submit">${text('确定', 'Confirm')}</button></footer>` : ''}</section></div>`;
  };
  const send = () => {
@@ -205,6 +252,7 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
   </section>`;
  };
  const render = (disabled = '') => {
+  captureDetails();
   const state = getState();
   const draftDisabled = disabled || (!config || loading ? ' disabled' : '');
   const noticeIssue = issue || session.error;
@@ -229,6 +277,7 @@ export function createPiChat({ redraw, getState, getLanguage, icon, esc, markdow
   </section>`;
  };
  const bind = ({ switchProfile, openModels }) => {
+  paint();
   const dialog = runtimeDialogs[0];
   const replyToExtension = (value) => {
    if (dialog) { runtimeDialogs = runtimeDialogs.filter((item) => item !== dialog); void dialog.source.send({ type: 'ui_response', id: dialog.id, value }).catch((error) => { issue = error.message; redraw(); }); }

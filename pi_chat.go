@@ -151,11 +151,9 @@ func loadPiChatConnection() (piChatConnection, error) {
 	// Include credentials in the digest so a key change invalidates old sessions.
 	fingerprint, _ := json.Marshal([]any{piRoot(), settings, provider, c.apiKey, c.headers})
 	c.config = PiChatConfig{ID: fmt.Sprintf("%x", sha256.Sum256(fingerprint)), ProfileID: profile.ID, ProfileName: profile.Name, BaseURL: base}
-	defaults := map[string]any{"name": modelID, "reasoning": false, "input": []string{"text"}, "cost": map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 4096}
-	for name, value := range defaults {
-		if len(model[name]) == 0 {
-			model[name] = toRaw(value)
-		}
+	normalizePiModelMetadata(model)
+	if piModelRawMissingOrNull(model["name"]) {
+		model["name"] = toRaw(modelID)
 	}
 	model["provider"] = toRaw(providerID)
 	model["api"] = toRaw(c.api)
@@ -187,6 +185,42 @@ func piChatEnvValue(value string) string {
 		return resolved
 	}
 	return value
+}
+
+func piModelRawMissingOrNull(value json.RawMessage) bool {
+	value = bytes.TrimSpace(value)
+	return len(value) == 0 || bytes.Equal(value, []byte("null"))
+}
+
+// Pi's cost calculator expects a cost object even for local models. Older
+// profiles and some /v1/models responses omit it or write it as null; keep the
+// model usable with those configurations instead of failing after the provider
+// has already returned text.
+func normalizePiModelMetadata(model map[string]json.RawMessage) {
+	defaults := map[string]any{
+		"name":          rawString(model, "id"),
+		"reasoning":     false,
+		"input":         []string{"text"},
+		"cost":          map[string]int{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+		"contextWindow": defaultModelContextWindow,
+		"maxTokens":     4096,
+	}
+	for name, value := range defaults {
+		if piModelRawMissingOrNull(model[name]) {
+			model[name] = toRaw(value)
+		}
+	}
+	var cost map[string]json.RawMessage
+	if err := json.Unmarshal(model["cost"], &cost); err != nil || cost == nil {
+		model["cost"] = toRaw(defaults["cost"])
+		return
+	}
+	for _, name := range []string{"input", "output", "cacheRead", "cacheWrite"} {
+		if piModelRawMissingOrNull(cost[name]) {
+			cost[name] = toRaw(0)
+		}
+	}
+	model["cost"] = toRaw(cost)
 }
 
 // Reserve the request before returning, then send bytes through Wails events.

@@ -48,8 +48,15 @@ const paths = {
 };
 const icon = (name, size = 18) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || '') + '</svg>';
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c]));
+const DEFAULT_CONTEXT_WINDOW = 256 * 1024;
+const contextWindowValue = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? Math.round(Number(value)) : DEFAULT_CONTEXT_WINDOW;
+const formatContextWindow = (value) => {
+ const tokens = contextWindowValue(value);
+ return tokens >= 1024 * 1024 ? `${(tokens / (1024 * 1024)).toFixed(tokens % (1024 * 1024) ? 1 : 0)}M` : `${Math.round(tokens / 1024)}K`;
+};
+const normalizeDraftModels = (models = []) => models.map((model) => ({ ...model, contextWindow: contextWindowValue(model.contextWindow) }));
 const emptyDraft = () => ({ id: '', name: '', baseUrl: '', apiKey: '', selectedModel: '', models: [], clearApiKey: false, hasApiKey: false });
-let state = { version: '0.2.2', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', profilePath: '', loadError: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
+let state = { version: '0.2.23', profiles: [], activeProvider: 'openai', activeModel: '', activeProfileId: '', configPath: '', profilePath: '', loadError: '', canRestore: false, chatGptRunning: false, chatGptTarget: '' };
 let draft = emptyDraft();
 let busy = '';
 let restoreFocusID = '';
@@ -87,7 +94,7 @@ let sidebarWidth = Number(localStorage.getItem('model-switcher-sidebar-width') |
 let resetPageScroll = false;
 const isPi = () => state.target === 'pi';
 const configName = () => isPi() ? 'models.json' : 'config.toml';
-let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.2.2', updateAvailable: false };
+let updateState = { status: 'unconfigured', message: '更新源未配置，已跳过检查。', currentVersion: '0.2.23', updateAvailable: false };
 let language = localStorage.getItem('model-switcher-language') || 'zh';
 let theme = localStorage.getItem('model-switcher-theme') || 'light';
 const app = document.querySelector('#app');
@@ -101,7 +108,7 @@ const zhToEn = {
  '安装量': 'Installs', '仓库 Stars': 'Repository stars', '用户评分': 'User rating', '查看反馈': 'View feedback', '统计来源': 'Stats source', '获取中…': 'Loading…', '排序': 'Sort', '安装量优先': 'Most installed', '仓库热度优先': 'Most repository stars', '名称 A–Z': 'Name A–Z', '按市场': 'Market', '用户评分（未提供）': 'User rating (unavailable)', '正在加载市场': 'Loading markets', '市场加载完成': 'Markets loaded', '上一页': 'Previous', '下一页': 'Next', '技能分页': 'Skill pages', '描述': 'Description',
  'skills.sh 记录的安装次数，非全网下载数': 'Install counts recorded by skills.sh, not global downloads', '整个仓库的 Stars，不是单个技能的评分': 'Stars for the entire repository, not a skill rating', '安装量来自 skills.sh；仓库 Stars 仅代表仓库热度。当前市场未提供用户评分。': 'Installs come from skills.sh. Repository stars reflect repository popularity. These markets do not provide user ratings.',
  '选择适合当前环境的显示模式。': 'Choose the appearance for your environment.',
- '使用的模型': 'Active model', '尚未选择模型': 'No model selected', '本地模型': 'Local model', '正在读取…': 'Loading…', '关闭配置编辑': 'Close config editor',
+ '使用的模型': 'Active model', '上下文大小': 'Context window', '默认 256K；应用后由当前模型直接使用。': 'Default 256K; applied directly to the selected model.', '尚未选择模型': 'No model selected', '本地模型': 'Local model', '正在读取…': 'Loading…', '关闭配置编辑': 'Close config editor',
  '主导航': 'Main navigation', '模型设置': 'Model settings', '当前应用': 'Current app', '连接与模型': 'Connections and models',
  '连接模型服务，选择模型并应用配置。': 'Connect a service, choose a model, and apply your configuration.', '搜索、安装和整理当前应用的技能。': 'Find, install, and organize skills for the current app.',
  '当前使用': 'Currently using', '使用默认模型': 'Default model', '编辑连接信息并应用到当前应用。': 'Edit this connection and apply it to the current app.', '添加一个 OpenAI 兼容的模型服务。': 'Add an OpenAI-compatible model service.',
@@ -198,7 +205,7 @@ function applyPreferences() {
 
 function profileFor(id) { return state.profiles.find((p) => p.id === id); }
 function currentProfile() { return profileFor(draft.id); }
-function edit(profile) { draft = profile ? { ...profile, apiKey: profile.apiKey || '', clearApiKey: false, models: profile.models || [] } : emptyDraft(); keyVisible = false; dirty = false; error = ''; message = ''; modelTestReply = ''; modelTestModel = ''; modelTestProtocol = ''; render(); }
+function edit(profile) { draft = profile ? { ...profile, apiKey: profile.apiKey || '', clearApiKey: false, models: normalizeDraftModels(profile.models || []) } : emptyDraft(); keyVisible = false; dirty = false; error = ''; message = ''; modelTestReply = ''; modelTestModel = ''; modelTestProtocol = ''; render(); }
 function currentIsLocal() { return state.activeProvider === 'model_switcher_local'; }
 function formatBytes(bytes) {
  if (!bytes) return '0 B';
@@ -359,7 +366,7 @@ async function navigatePage(next, section = skillSection) {
 function renderUpdateManager() {
  const available = updateState.updateAvailable;
  const status = updateState.status === 'error' ? 'is-error' : available ? 'is-available' : '';
- return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.2.2') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
+ return '<section class="update-manager"><div class="update-manager-head"><div><strong>更新管理</strong><small>检查新版本并在下载校验后自动重启。</small></div><button id="check-update" class="text-button">' + icon('refresh', 14) + '检查更新</button></div><div class="update-status ' + status + '"><span>当前版本 v' + esc(updateState.currentVersion || '0.2.23') + '</span><span>' + esc(updateState.message || '尚未检查') + '</span></div>' + (available ? '<button id="apply-update" class="button button-primary update-apply">' + icon('download', 15) + '更新到 v' + esc(updateState.latestVersion) + '</button>' : '') + '</section>';
 }
 
 function sidebarBounds() {
@@ -411,7 +418,7 @@ function renderSidebar(disabled, title) {
 function renderModelPage(disabled, title) {
  const selected = draft.models.find((m) => m.id === draft.selectedModel);
  const activeEndpoint = currentIsLocal() ? profileFor(state.activeProfileId)?.baseUrl : '';
- const rows = draft.models.length ? draft.models.slice(0, 6).map((m) => `<div class="model-row ${m.id === draft.selectedModel ? 'chosen' : ''}">${icon(m.id === draft.selectedModel ? 'check' : 'server', 15)}<span>${esc(m.id)}</span>${m.supportsImages && isPi() ? '<span class="skill-badge">图像</span>' : ''}</div>`).join('') : `<div class="model-empty">${icon('server', 28)}<strong>先连接你的本地服务</strong><p>填写 API 地址，然后点击「获取模型」。</p></div>`;
+ const rows = draft.models.length ? draft.models.slice(0, 6).map((m) => `<div class="model-row ${m.id === draft.selectedModel ? 'chosen' : ''}">${icon(m.id === draft.selectedModel ? 'check' : 'server', 15)}<span>${esc(m.id)}</span><small class="model-context">${formatContextWindow(m.contextWindow)}</small>${m.supportsImages && isPi() ? '<span class="skill-badge">图像</span>' : ''}</div>`).join('') : `<div class="model-empty">${icon('server', 28)}<strong>先连接你的本地服务</strong><p>填写 API 地址，然后点击「获取模型」。</p></div>`;
  return `<section class="provider-summary" aria-label="模型连接"><span class="summary-icon">${icon('route', 26)}</span><div class="summary-copy"><span>当前使用</span><strong>${esc(title)}</strong>${activeEndpoint ? `<small class="summary-endpoint">${esc(activeEndpoint)}</small>` : ''}</div><span class="route-line" aria-hidden="true"></span><div class="summary-model"><span>${esc(state.activeModel || '使用默认模型')}</span><small>${isPi() ? 'pi agent' : 'ChatGPT / Codex'}</small></div><button id="restore" class="button button-secondary" ${disabled}${state.canRestore ? '' : ' disabled'}>${icon('refresh', 15)}${isPi() ? '恢复原配置' : '切回 OpenAI'}</button></section>
  <div class="editor-heading"><div><h2>${esc(draft.name || '新建配置')}</h2><p>${draft.id ? '编辑连接信息并应用到当前应用。' : '添加一个 OpenAI 兼容的模型服务。'}</p></div><button id="activate-current" class="button button-primary" ${disabled}${draft.selectedModel ? '' : ' disabled'}>${icon('play', 15)}${isPi() ? '应用到 pi agent' : '应用到 ChatGPT'}</button></div>
  <div class="workspace-grid"><section class="panel config-panel"><div class="panel-heading"><div>${icon('server', 18)}<h3>服务连接</h3></div><span class="muted-label">${draft.id ? '编辑配置' : '新建配置'}</span></div><div class="form-grid">
@@ -419,7 +426,7 @@ function renderModelPage(disabled, title) {
  <label class="field"><span>API 地址</span><input id="url" type="url" placeholder="http://127.0.0.1:1234/v1" value="${esc(draft.baseUrl)}" ${disabled}><small>支持本机、局域网和远程 OpenAI 兼容服务。</small></label>
  <label class="field"><span>API Key <em>可选</em></span><div class="secret-field"><input id="key" type="${keyVisible ? 'text' : 'password'}" autocomplete="off" value="${esc(draft.apiKey)}" placeholder="${draft.hasApiKey && !draft.apiKey ? 'Key 已保存但无法读取，请重新填写' : '服务无需认证时可留空'}" ${disabled}><div class="secret-actions"><button type="button" class="icon-button" id="key-toggle" aria-label="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" title="${keyVisible ? '隐藏 API Key' : '显示 API Key'}" ${disabled}>${icon(keyVisible ? 'eyeOff' : 'eye', 16)}</button><button type="button" class="icon-button" id="key-copy" aria-label="复制 API Key" title="复制 API Key" ${disabled || !draft.apiKey ? 'disabled' : ''}>${icon('copy', 16)}</button></div></div><small>Key 直接保存在 profiles.json，界面默认隐藏；可显示或复制。</small></label>
  ${draft.hasApiKey ? `<label class="clear-key"><input id="clear-key" type="checkbox" ${draft.clearApiKey ? 'checked' : ''} ${disabled}>移除已保存的 Key</label>` : ''}</div><div class="form-actions"><button class="button button-secondary" id="save" ${disabled}>${icon('save', 16)}${busy === 'save' ? '正在保存…' : '保存'}</button><button class="button button-secondary" id="fetch" ${disabled}>${icon('refresh', 16)}${busy === 'fetch' ? '正在获取…' : '获取模型'}</button></div></section>
- <section class="panel model-panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>选择模型</h3></div><span class="muted-label">${draft.models.length} 个可用</span></div><label class="field"><span>使用的模型</span><select id="model" ${disabled}${draft.models.length ? '' : ' disabled'}><option value="">${draft.models.length ? '选择一个模型' : '等待获取模型列表'}</option>${draft.models.map((m) => `<option value="${esc(m.id)}" ${m.id === draft.selectedModel ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}</select></label>
+ <section class="panel model-panel"><div class="panel-heading"><div>${icon('spark', 18)}<h3>选择模型</h3></div><span class="muted-label">${draft.models.length} 个可用</span></div><div class="model-selection-grid"><label class="field"><span>使用的模型</span><select id="model" ${disabled}${draft.models.length ? '' : ' disabled'}><option value="">${draft.models.length ? '选择一个模型' : '等待获取模型列表'}</option>${draft.models.map((m) => `<option value="${esc(m.id)}" ${m.id === draft.selectedModel ? 'selected' : ''}>${esc(m.id)}</option>`).join('')}</select></label><label class="field"><span>上下文大小</span><div class="context-window-input"><input id="model-context-window" type="number" min="1024" step="1024" value="${contextWindowValue(selected?.contextWindow)}" ${disabled}${draft.selectedModel ? '' : ' disabled'}><span>tokens</span></div><small>默认 256K；应用后由当前模型直接使用。</small></label></div>
  ${isPi() ? `<div class="model-capability"><label><input id="model-images" type="checkbox" ${selected?.supportsImages ? 'checked' : ''} ${disabled}${draft.selectedModel ? '' : ' disabled'}>支持图像输入</label><small>仅在模型和 API 支持图像时启用。</small></div>` : ''}<div class="model-list">${rows}</div><p class="model-hint">${isPi() ? 'pi agent 使用 <strong>/v1/chat/completions</strong>' : '接入 Codex 需要兼容 <strong>/v1/responses</strong>'}</p></section></div>
  ${isPi() ? `<section class="connection-details"><strong>配置位置</strong><code>${esc(state.configPath)}</code><small>切换后在 pi 中使用 /model 选择模型；新会话使用已保存的默认模型。技能安装后使用 /reload。</small></section>` : `<section class="connection-details"><div class="path-heading"><label id="chatgpt-path-label">ChatGPT 路径</label><span class="muted-label">${state.chatGptTarget ? '手动选择' : '自动查找'}</span><button class="text-button" id="auto-target" ${disabled}>${icon('search', 15)}自动查找</button></div><button id="chatgpt-target" class="target-picker" aria-labelledby="chatgpt-path-label" ${disabled}>${icon('folder', 17)}<span>${esc(state.chatGptResolvedTarget || state.chatGptTarget || '未找到 ChatGPT，点击选择应用')}</span></button>${state.chatGptTargetError ? `<small class="is-error">${esc(state.chatGptTargetError)}</small>` : ''}</section>`}
  <section class="panel model-test-panel"><div class="panel-heading"><div>${icon('terminal', 18)}<h3>测试对话</h3></div><span class="muted-label">${isPi() ? '/v1/chat/completions' : '/v1/responses'}</span></div><label class="field"><span>发送给当前模型</span><textarea id="model-test-input" class="model-test-input" rows="3" maxlength="4000" placeholder="输入要发送给模型的内容，例如：你好，请介绍一下你自己。" ${disabled}>${esc(modelTestInput)}</textarea></label><div class="model-test-actions"><span class="model-test-hint">当前模型：${esc(draft.selectedModel || '请先选择模型')}</span><button class="button button-primary" id="test-model" ${disabled}${draft.selectedModel ? '' : ' disabled'}>${icon('play', 16)}${busy === 'test-model' ? '正在发送…' : '发送测试'}</button></div>${modelTestReply ? `<div class="model-test-answer" role="status"><div class="model-test-answer-head"><strong>模型回答</strong><span>${esc(modelTestModel || draft.selectedModel)} · ${esc(modelTestProtocol || (isPi() ? 'chat.completions' : 'responses'))}</span></div><div class="model-test-markdown">${markdownHTML(modelTestReply)}</div></div>` : `<div class="model-test-empty">输入一段话并点击“发送测试”，模型的完整回答会显示在这里。</div>`}</section>
@@ -492,6 +499,7 @@ function bind() {
  on('model-test-input', 'keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.getElementById('test-model')?.click(); } });
  on('clear-key', 'change', (e) => { draft.clearApiKey = e.target.checked; dirty = true; });
  on('model', 'change', (e) => { draft.selectedModel = e.target.value; dirty = true; render(); });
+ on('model-context-window', 'change', (e) => { const value = contextWindowValue(e.target.value); draft.models = draft.models.map((m) => m.id === draft.selectedModel ? { ...m, contextWindow: value } : m); dirty = true; render(); });
  document.querySelectorAll('[data-profile]').forEach((b) => b.addEventListener('click', () => { page = 'models'; treeExpanded.models = true; resetPageScroll = true; edit(profileFor(b.dataset.profile)); }));
  document.querySelectorAll('[data-page]').forEach((b) => b.addEventListener('click', () => navigatePage(b.dataset.page)));
  document.querySelectorAll('[data-skill-section]').forEach((b) => b.addEventListener('click', () => navigatePage('skills', b.dataset.skillSection)));
@@ -567,8 +575,8 @@ function bind() {
  on('config-save', 'click', () => run('config-save', async () => { await WriteConfigText(configPreview || ''); state = await LoadState(); loaded = true; configDirty = false; message = configName() + ' 已保存，原文件已备份。'; }));
  on('config-close', 'click', () => { if (configDirty && !window.confirm(configName() + ' 有未保存的修改，确定关闭吗？')) return; configPreview = null; configDirty = false; render(); document.getElementById('config-view')?.focus(); });
  on('fetch', 'click', () => run('fetch', async () => {
-  const previous = new Map(draft.models.map((m) => [m.id, m.supportsImages]));
-  draft.models = (await FetchModels(draft)).map((m) => ({ ...m, supportsImages: previous.has(m.id) ? Boolean(previous.get(m.id)) : Boolean(m.supportsImages) }));
+  const previous = new Map(draft.models.map((m) => [m.id, { supportsImages: m.supportsImages, contextWindow: m.contextWindow }]));
+  draft.models = normalizeDraftModels((await FetchModels(draft)).map((m) => { const old = previous.get(m.id); return { ...m, supportsImages: old ? Boolean(old.supportsImages) : Boolean(m.supportsImages), contextWindow: old?.contextWindow || m.contextWindow }; }));
   if (!draft.models.some((m) => m.id === draft.selectedModel)) draft.selectedModel = draft.models[0]?.id || '';
   dirty = true; message = '发现 ' + draft.models.length + ' 个模型，已自动填入。';
  }));

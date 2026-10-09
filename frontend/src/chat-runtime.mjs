@@ -67,6 +67,7 @@ export class PiRuntimeAgent {
    if (!this.pending || record.runID !== this.pending.id) return;
    if (record.messages) this.state.messages = record.messages;
    this.handled = record.disposition === 'handled';
+   if (record.outcome) this.emit({ type: 'run_outcome', outcome: record.outcome });
    if (this.handled) this.emit({ type: 'input_handled' });
    this.finish(record.type === 'failed' ? new Error(record.message) : undefined); return;
   }

@@ -277,6 +277,7 @@ export namespace main {
 	    id: string;
 	    owned_by?: string;
 	    supportsImages?: boolean;
+	    contextWindow?: number;
 
 	    static createFrom(source: any = {}) {
 	        return new Model(source);
@@ -287,6 +288,7 @@ export namespace main {
 	        this.id = source["id"];
 	        this.owned_by = source["owned_by"];
 	        this.supportsImages = source["supportsImages"];
+	        this.contextWindow = source["contextWindow"];
 	    }
 	}
 	export class ProfileView {
@@ -646,6 +648,7 @@ export namespace main {
 	export class PiChatRuntimeInfo {
 	    cwd: string;
 	    agentDir: string;
+	    logPath: string;
 	    skills: PiChatRuntimeResource[];
 	    extensions: string[];
 	    tools: string[];
@@ -659,6 +662,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cwd = source["cwd"];
 	        this.agentDir = source["agentDir"];
+	        this.logPath = source["logPath"];
 	        this.skills = this.convertValues(source["skills"], PiChatRuntimeResource);
 	        this.extensions = source["extensions"];
 	        this.tools = source["tools"];

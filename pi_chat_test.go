@@ -270,6 +270,26 @@ func TestPiChatReadsActualModelAndEnvironmentCredentials(t *testing.T) {
 	}
 }
 
+func TestNormalizePiModelMetadataFillsMissingCost(t *testing.T) {
+	model := map[string]json.RawMessage{
+		"id":   toRaw("local-model"),
+		"cost": json.RawMessage("null"),
+	}
+	normalizePiModelMetadata(model)
+	var cost map[string]json.RawMessage
+	if err := json.Unmarshal(model["cost"], &cost); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"input", "output", "cacheRead", "cacheWrite"} {
+		if got := string(cost[name]); got != "0" {
+			t.Fatalf("cost.%s = %s, want 0", name, got)
+		}
+	}
+	if rawString(model, "name") != "local-model" || len(model["input"]) == 0 {
+		t.Fatalf("metadata defaults missing: %#v", model)
+	}
+}
+
 func TestPiChatResponsesEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/responses" {

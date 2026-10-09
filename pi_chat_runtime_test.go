@@ -151,6 +151,73 @@ func TestPiChatRuntimeLoadsGlobalSkillsAndExecutesExtensions(t *testing.T) {
 	}
 }
 
+func TestPiChatRuntimeRecoversEmptyAssistantAfterTool(t *testing.T) {
+	if _, _, err := resolvePiChatSDK(); err != nil {
+		t.Skipf("installed Pi SDK required: %v", err)
+	}
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		n := requests
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"recovery-call\",\"type\":\"function\",\"function\":{\"name\":\"recovery_probe\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		case 2:
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":\"stop\"}]}\n\n")
+		default:
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"recovered response\"},\"finish_reason\":\"stop\"}]}\n\n")
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	app, config, _ := setupPiChat(t, server.URL)
+	if err := atomicWrite(filepath.Join(piRoot(), "extensions", "recovery-probe.js"), []byte(`export default function(pi) { pi.registerTool({name:'recovery_probe', label:'Recovery probe', description:'Returns a recovery result', parameters:{type:'object',properties:{}}, execute: async () => ({content:[{type:'text',text:'TOOL_RESULT'}],details:{}})}); }`)); err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan PiChatRuntimeEvent, 1024)
+	app.piRuntimeEmit = func(event PiChatRuntimeEvent) { events <- event }
+	t.Cleanup(func() { app.ClosePiChatRuntime("") })
+	if _, err := app.OpenPiChatRuntime("recovery", config.ID); err != nil {
+		t.Fatal(err)
+	}
+	command, _ := json.Marshal(map[string]any{"type": "run", "id": "recover-run", "history": []any{}, "message": map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "recover this task"}}, "timestamp": 1}})
+	if err := app.PiChatRuntimeCommand("recovery", string(command)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(20 * time.Second)
+	for {
+		select {
+		case packet := <-events:
+			var record map[string]json.RawMessage
+			_ = json.Unmarshal(packet.Event, &record)
+			if rawString(record, "type") != "done" {
+				continue
+			}
+			var outcome struct {
+				Reason           string `json:"reason"`
+				RecoveryAttempts int    `json:"recoveryAttempts"`
+			}
+			_ = json.Unmarshal(record["outcome"], &outcome)
+			if outcome.RecoveryAttempts < 1 || outcome.Reason != "completed" || !strings.Contains(string(record["messages"]), "recovered response") {
+				t.Fatalf("recovery outcome: %s", packet.Event)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if requests < 3 {
+				t.Fatalf("expected a recovery model request, got %d", requests)
+			}
+			return
+		case <-deadline:
+			t.Fatal("recovery run timed out")
+		}
+	}
+}
+
 func TestPiChatRuntimeStreamsImagesAndAcknowledgesAbort(t *testing.T) {
 	if _, _, err := resolvePiChatSDK(); err != nil {
 		t.Skipf("installed Pi SDK required: %v", err)

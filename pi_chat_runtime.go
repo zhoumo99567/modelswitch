@@ -28,6 +28,7 @@ type PiChatRuntimeResource struct {
 type PiChatRuntimeInfo struct {
 	Cwd         string                  `json:"cwd"`
 	AgentDir    string                  `json:"agentDir"`
+	LogPath     string                  `json:"logPath"`
 	Skills      []PiChatRuntimeResource `json:"skills"`
 	Extensions  []string                `json:"extensions"`
 	Tools       []string                `json:"tools"`
@@ -45,6 +46,9 @@ type piChatWorker struct {
 	ready                chan piChatWorkerReady
 	done                 chan struct{}
 	emit                 func(PiChatRuntimeEvent)
+	logMu                sync.Mutex
+	logFile              *os.File
+	logPath              string
 }
 type piChatWorkerReady struct {
 	info PiChatRuntimeInfo
@@ -126,6 +130,42 @@ func (w *piChatWorker) close() {
 		_ = w.cmd.Process.Kill()
 		<-w.done
 	}
+	w.logMu.Lock()
+	if w.logFile != nil {
+		_ = w.logFile.Close()
+		w.logFile = nil
+	}
+	w.logMu.Unlock()
+}
+
+func (w *piChatWorker) writeLog(data []byte) {
+	w.logMu.Lock()
+	defer w.logMu.Unlock()
+	if w.logFile == nil {
+		return
+	}
+	_, _ = w.logFile.Write(append(append([]byte(nil), data...), '\n'))
+}
+
+func piChatLogFile(id string) (string, *os.File) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", nil
+	}
+	root := filepath.Join(cache, "ModelSwitcher", "logs")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", nil
+	}
+	name := strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(id)
+	if name == "" {
+		name = "session"
+	}
+	path := filepath.Join(root, fmt.Sprintf("pi-chat-%s-%s.jsonl", time.Now().Format("20060102-150405"), name))
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return "", nil
+	}
+	return path, file
 }
 
 func startPiChatWorker(id string, c piChatConnection, emit func(PiChatRuntimeEvent)) (*piChatWorker, error) {
@@ -163,8 +203,15 @@ func startPiChatWorker(id string, c piChatConnection, emit func(PiChatRuntimeEve
 		return nil, err
 	}
 	w := &piChatWorker{id: id, configID: c.config.ID, apiKey: c.apiKey, cmd: cmd, stdin: stdin, ready: make(chan piChatWorkerReady, 1), done: make(chan struct{}), emit: emit}
+	w.logPath, w.logFile = piChatLogFile(id)
 	if err = cmd.Start(); err != nil {
 		_ = stdin.Close()
+		w.logMu.Lock()
+		if w.logFile != nil {
+			_ = w.logFile.Close()
+			w.logFile = nil
+		}
+		w.logMu.Unlock()
 		return nil, err
 	}
 	// Drain extension logs without putting credentials or arbitrary stdout into
@@ -188,7 +235,11 @@ func startPiChatWorker(id string, c piChatConnection, emit func(PiChatRuntimeEve
 			if json.Unmarshal(data, &record) != nil {
 				continue // An extension wrote a non-protocol line to stdout.
 			}
-			if record.Type == "ready" || record.Type == "fatal" {
+			if record.Type == "diagnostic" || record.Type == "recovery" {
+				w.writeLog(data)
+				emit(PiChatRuntimeEvent{SessionID: id, Event: data})
+			} else if record.Type == "ready" || record.Type == "fatal" {
+				record.Info.LogPath = w.logPath
 				result := piChatWorkerReady{info: record.Info}
 				if record.Type == "fatal" {
 					result.err = errors.New(record.Message)
@@ -209,7 +260,7 @@ func startPiChatWorker(id string, c piChatConnection, emit func(PiChatRuntimeEve
 		data, _ := json.Marshal(map[string]any{"type": "closed", "message": "pi 运行时已退出，请开启新对话；确认 pi CLI 和 Node.js 可以正常运行。"})
 		emit(PiChatRuntimeEvent{SessionID: id, Event: data})
 	}()
-	if err = w.write(map[string]any{"type": "init", "sdkPath": sdkPath, "agentDir": piRoot(), "cwd": cwd, "model": c.config.Model, "apiKey": c.apiKey, "headers": c.headers}); err != nil {
+	if err = w.write(map[string]any{"type": "init", "sdkPath": sdkPath, "agentDir": piRoot(), "cwd": cwd, "logPath": w.logPath, "model": c.config.Model, "apiKey": c.apiKey, "headers": c.headers}); err != nil {
 		w.close()
 		return nil, err
 	}

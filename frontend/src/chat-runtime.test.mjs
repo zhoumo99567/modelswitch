@@ -73,11 +73,33 @@ test('runtime forwards extension UI and tool events and ignores another session'
  const f = fixture(); f.session.enqueue(createChatEntry('tools')); await f.wait(1);
  f.emit({ type: 'ui', id: 'dialog', method: 'confirm', title: 'Extension' });
  assert.equal(f.runtimeEvents[0].id, 'dialog');
- f.emit({ type: 'event', runID: f.requests()[0].id, event: { type: 'tool_execution_start', toolCallId: 'tool', toolName: 'global_tool' } });
+ f.emit({ type: 'event', runID: f.requests()[0].id, event: { type: 'tool_execution_start', toolCallId: 'tool', toolName: 'global_tool', args: { url: 'https://example.test', waitUntil: 'networkidle' } } });
  assert.equal(f.session.active.reply.tools[0].running, true);
- f.emit({ type: 'event', runID: f.requests()[0].id, event: { type: 'tool_execution_end', toolCallId: 'tool', toolName: 'global_tool' } });
+ assert.deepEqual(f.session.active.reply.tools[0].input, { url: 'https://example.test', waitUntil: 'networkidle' });
+ assert.equal(typeof f.session.active.reply.toolsStartedAt, 'number');
+ f.emit({ type: 'event', runID: f.requests()[0].id, event: { type: 'tool_execution_end', toolCallId: 'tool', toolName: 'global_tool', isError: true, result: { content: [{ type: 'text', text: 'browser page was unavailable' }] } } });
  assert.equal(f.session.active.reply.tools[0].running, false);
+ assert.equal(typeof f.session.active.reply.toolsFinishedAt, 'number');
+ assert.equal(typeof f.session.active.reply.tools[0].durationMs, 'number');
+ assert.deepEqual(f.session.active.reply.tools[0].output, { content: [{ type: 'text', text: 'browser page was unavailable' }] });
+ assert.equal(f.session.active.reply.tools[0].detail, 'browser page was unavailable');
+ assert.match(f.session.active.reply.status, /browser page was unavailable/);
  f.finish(); await f.session.waitForIdle();
+});
+
+test('runtime surfaces a bounded recovery outcome to the chat session', async () => {
+ const f = fixture(); f.session.enqueue(createChatEntry('recover')); await f.wait(1);
+ f.emit({ type: 'done', runID: f.requests()[0].id, outcome: { reason: 'recovery_exhausted', recoveryAttempts: 2 }, messages: [] });
+ await f.session.waitForIdle();
+ assert.equal(f.session.messages[1].outcome.reason, 'recovery_exhausted');
+ assert.match(f.session.messages[1].status, /2/);
+});
+
+test('runtime explains context truncation instead of showing an empty response', async () => {
+ const f = fixture(); f.session.enqueue(createChatEntry('long')); await f.wait(1);
+ f.emit({ type: 'done', runID: f.requests()[0].id, outcome: { reason: 'recovery_exhausted', stopReason: 'length', recoveryAttempts: 2 }, messages: [] });
+ await f.session.waitForIdle();
+ assert.match(f.session.messages[1].status, /context limit/);
 });
 
 test('closing a runtime settles pending work and removes its event listener', async () => {

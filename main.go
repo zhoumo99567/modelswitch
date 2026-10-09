@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 
@@ -35,8 +36,19 @@ func main() {
 		return
 	}
 
+	releaseSingleInstance, err := acquireSingleInstance()
+	if err != nil {
+		if errors.Is(err, errAlreadyRunning) {
+			fmt.Fprintln(os.Stderr, "Model Switcher 已经在运行")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "无法获取 Model Switcher 单实例锁：", err)
+		return
+	}
+	defer releaseSingleInstance()
+
 	app := NewApp()
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:            "Model Switcher",
 		Width:            defaultWindowWidth,
 		Height:           defaultWindowHeight,

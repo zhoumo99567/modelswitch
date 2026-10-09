@@ -43,6 +43,10 @@ func TestPiProfileObjectsPreserveSettingsAndCredentialCommand(t *testing.T) {
 	if len(provider["models"].([]any)) != 2 || rawString(settings, "theme") != "dark" || rawString(settings, "defaultProvider") != providerID || len(providers["custom"]) == 0 {
 		t.Fatal("lost settings or models")
 	}
+	entries := provider["models"].([]any)
+	if entries[0].(map[string]any)["contextWindow"] != float64(defaultModelContextWindow) {
+		t.Fatalf("default context window: %#v", entries[0])
+	}
 }
 func TestPiActivateRestoreAndTargetIsolation(t *testing.T) {
 	isolateSkillStore(t)

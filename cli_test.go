@@ -33,6 +33,9 @@ func TestCLILaunchQuotingAndPathResolution(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX launcher")
 	}
+	// Keep a user's managed ModelSwitcher installation from taking priority
+	// over the temporary PATH fixture used by this test.
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	dir := filepath.Join(root, "project's folder $(touch injected)")
 	bin := filepath.Join(root, "bin's folder")

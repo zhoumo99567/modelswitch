@@ -1,6 +1,16 @@
 import { attachmentImages, attachmentPrompt } from './chat-attachments.mjs';
 export const MAX_QUEUED_MESSAGES = 20;
 
+function toolResultText(result) {
+ const text = Array.isArray(result?.content) ? result.content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n').trim() : '';
+ return text.length > 600 ? `${text.slice(0, 600)}…` : text;
+}
+
+function toolInputValue(event) {
+ const call = event.toolCall || event;
+ return call.args ?? call.input ?? call.arguments;
+}
+
 export function createChatEntry(prompt, attachments = [], defaultPrompt = 'Please review the attached files and images.') {
  const entry = { id: crypto.randomUUID(), prompt: prompt.trim(), attachments: attachments.slice(), mode: 'followUp', defaultPrompt };
  updateEntryMessage(entry);
@@ -104,6 +114,14 @@ export class ChatSession {
  }
 
  handleEvent(event) {
+  if (event.type === 'run_outcome' && this.active) {
+   this.active.reply.outcome = event.outcome;
+   if (event.outcome.reason === 'recovery_exhausted' && event.outcome.stopReason === 'length') this.active.reply.status = this.text('上下文接近模型上限，已尝试 compact 并续跑 2 次，模型仍未给出最终回复', 'The context limit was reached; after attempting compaction and 2 recovery attempts the model still did not finish');
+   else if (event.outcome.reason === 'recovery_exhausted') this.active.reply.status = this.text('工具失败后已自动续跑 2 次，模型仍未给出最终回复', 'The model did not finish after 2 recovery attempts following a tool failure');
+   else if (event.outcome.reason === 'tool_terminated') this.active.reply.status = this.text('工具明确结束了本轮执行', 'The tool explicitly ended this run');
+   else if (event.outcome.reason === 'output_limit') this.active.reply.status = this.text('上下文接近模型上限，输出被截断；请继续对话或开启新会话', 'The context limit was reached and the output was truncated; continue or start a new chat');
+   this.onChange('stream');
+  }
   if (event.type === 'input_handled' && this.active) {
    this.active.completed = true;
    this.active.reply.status = this.text('已由扩展处理', 'Handled by extension');
@@ -111,9 +129,25 @@ export class ChatSession {
   }
   if (event.type.startsWith('tool_execution_') && this.active) {
    const tools = this.active.reply.tools ||= [];
+   const now = Date.now();
+   if (event.type === 'tool_execution_start' && !this.active.reply.toolsStartedAt) this.active.reply.toolsStartedAt = now;
    let tool = tools.find((tool) => tool.id === event.toolCallId);
    if (!tool) { tool = { id: event.toolCallId, name: event.toolName }; tools.push(tool); }
+   const input = toolInputValue(event);
+   if (input !== undefined) tool.input = input;
+   if (event.toolName && !tool.name) tool.name = event.toolName;
    tool.running = event.type !== 'tool_execution_end'; tool.error = !!event.isError;
+   if (event.type === 'tool_execution_end') {
+    tool.finishedAt = now;
+    tool.durationMs = tool.startedAt ? Math.max(0, now - tool.startedAt) : undefined;
+    this.active.reply.toolsFinishedAt = now;
+    if (event.result !== undefined) tool.output = event.result;
+    if (event.isError) {
+     tool.detail = toolResultText(event.result);
+     this.active.reply.status = tool.detail ? this.text(`工具调用失败：${tool.detail}`, `Tool call failed: ${tool.detail}`) : this.text('工具调用失败', 'Tool call failed');
+    }
+   }
+   if (event.type === 'tool_execution_start') tool.startedAt ||= now;
    this.onChange('stream');
   }
   if (event.type === 'message_start' && event.message.role === 'user') {
@@ -130,10 +164,14 @@ export class ChatSession {
    reply.content = event.message.content.filter((part) => part.type === 'text').map((part) => part.text).join('');
    reply.thinking = event.message.content.filter((part) => part.type === 'thinking').map((part) => part.thinking).join('');
    if (event.type === 'message_end') {
-    this.active.completed = !['error', 'aborted'].includes(event.message.stopReason);
+    // Pi emits an assistant message_end with stopReason=toolUse for every
+    // intermediate tool round. It is not the end of the user turn and usually
+    // has no text content yet.
+    this.active.completed = !['error', 'aborted', 'toolUse'].includes(event.message.stopReason);
     if (event.message.stopReason === 'aborted') reply.status = this.interruptRequested && !this.stopRequested ? this.text('已转为引导', 'Interrupted by guidance') : this.text('已停止生成', 'Generation stopped');
     else if (event.message.stopReason === 'error') reply.status = this.text('发送失败', 'Request failed');
-    else if (!reply.content) reply.status = this.text('模型未返回文本', 'The model returned no text');
+    else if (reply.content) reply.status = '';
+    else if (event.message.stopReason !== 'toolUse') reply.status = this.text('模型未返回文本', 'The model returned no text');
    }
    this.onChange('stream');
   }

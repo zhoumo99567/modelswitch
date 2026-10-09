@@ -402,16 +402,33 @@ func installDependencyWithNodeInstaller(ctx context.Context, id string, progress
 			pkg = "@earendil-works/pi-coding-agent@1"
 		}
 		progress("正在下载并安装 "+id+"…", 75)
-		cmd := dependencyCommand(ctx, node, npm, "install", "--global", "--prefix", prefix, "--registry=https://registry.npmjs.org", "--no-audit", "--no-fund", pkg)
-		cmd.Dir = prefix
-		log := &limitedInstallOutput{}
-		cmd.Stdout = log
-		cmd.Stderr = log
-		if err = cmd.Run(); err != nil {
+		install := func(force bool) (error, string) {
+			args := []string{npm, "install", "--global", "--prefix", prefix, "--registry=https://registry.npmjs.org", "--no-audit", "--no-fund"}
+			if force {
+				// The managed prefix can contain a stale bin/pi or bin/codex from
+				// an interrupted install. npm otherwise refuses to replace it with
+				// EEXIST, while --force is safe here because this directory is owned
+				// by Model Switcher rather than a system-wide npm prefix.
+				args = append(args, "--force")
+			}
+			args = append(args, pkg)
+			cmd := dependencyCommand(ctx, node, args...)
+			cmd.Dir = prefix
+			log := &limitedInstallOutput{}
+			cmd.Stdout = log
+			cmd.Stderr = log
+			return cmd.Run(), log.String()
+		}
+		var output string
+		if err, output = install(false); err != nil && strings.Contains(output, "EEXIST") {
+			progress("检测到已有的 "+id+" CLI 文件，正在修复安装…", 82)
+			err, output = install(true)
+		}
+		if err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("安装超时或已取消，请重试：%w", ctx.Err())
 			}
-			return fmt.Errorf("npm 安装失败：%s", log.String())
+			return fmt.Errorf("npm 安装失败：%s", output)
 		}
 	}
 	progress("正在验证安装结果…", 95)

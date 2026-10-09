@@ -6,8 +6,48 @@ import { createHash, randomUUID } from 'node:crypto';
 
 const output = process.stdout.write.bind(process.stdout);
 const emit = (event) => output(JSON.stringify(event) + '\n');
+const emitTrace = (type, payload) => emit({ type, timestamp: new Date().toISOString(), ...payload });
 console.log = console.info = console.debug = (...args) => console.error(...args);
-let session, loader, sdk, extensionTheme, cwd, agentDir, busy = false, shuttingDown = false, runID = '', editorText = '';
+let session, loader, sdk, extensionTheme, cwd, agentDir, runtimeLogPath = '', busy = false, shuttingDown = false, runID = '', editorText = '', aborted = false, runState;
+const MAX_EMPTY_RECOVERIES = 2;
+function safePreview(value, limit = 1200) {
+ if (value === undefined || value === null) return '';
+ let raw;
+ try { raw = typeof value === 'string' ? value : JSON.stringify(value); } catch { raw = String(value); }
+ raw = raw.replace(/((?:"?(?:api[_-]?key|authorization|token|secret|password)"?)\s*:\s*")([^"]*)(")/gi, '$1[redacted]$3');
+ raw = raw.replace(/((?:api[_-]?key|authorization|token|secret|password)\s*[=:]\s*)([^,}\s]+)/gi, '$1[redacted]');
+ return raw.length > limit ? `${raw.slice(0, limit)}…` : raw;
+}
+function observeEvent(event) {
+ if (!runState) return;
+ if (event.type === 'message_end' && event.message?.role === 'assistant') {
+  runState.lastAssistant = event.message;
+  const hasText = event.message.content?.some((part) => part.type === 'text' && part.text?.trim());
+  emitTrace('diagnostic', { runID, stage: 'assistant_end', stopReason: event.message.stopReason || '', rawStopReason: event.message.rawStopReason || '', hasText: !!hasText, errorMessage: event.message.errorMessage || '', usage: event.message.usage, contextWindow: session?.model?.contextWindow, maxTokens: session?.model?.maxTokens });
+ }
+ if (event.type === 'tool_execution_end') {
+  runState.toolCount++;
+  if (event.isError) runState.toolErrors++;
+  if (event.result?.terminate) runState.terminated = true;
+  const resultText = event.isError ? event.result?.content?.filter((part) => part.type === 'text').map((part) => part.text || '').join('\n') : '';
+  emitTrace('diagnostic', { runID, stage: 'tool_end', toolName: event.toolName || '', isError: !!event.isError, durationMs: event.durationMs ?? null, result: safePreview(resultText), toolCount: runState.toolCount, toolErrors: runState.toolErrors });
+ }
+ if (event.type === 'tool_execution_start') emitTrace('diagnostic', { runID, stage: 'tool_start', toolName: event.toolName || '', toolCallId: event.toolCallId || '', args: safePreview(event.args) });
+ if (event.type === 'compaction_start' || event.type === 'compaction_end' || event.type === 'auto_retry_start' || event.type === 'auto_retry_end') {
+  if (event.type === 'compaction_end') runState.compactionEvents = (runState.compactionEvents || 0) + 1;
+  emitTrace('diagnostic', { runID, stage: event.type, reason: event.reason || '', attempt: event.attempt, maxAttempts: event.maxAttempts, errorMessage: safePreview(event.errorMessage || event.finalError, 800), willRetry: event.willRetry, aborted: event.aborted });
+ }
+}
+function runOutcome(recoveryAttempts) {
+ const message = runState?.lastAssistant;
+ const hasText = message?.content?.some((part) => part.type === 'text' && part.text?.trim());
+ const stopReason = message?.stopReason || '';
+ const reason = aborted || stopReason === 'aborted' ? 'aborted' : runState?.terminated ? 'tool_terminated'
+  : !hasText && recoveryAttempts >= MAX_EMPTY_RECOVERIES && runState?.toolCount ? 'recovery_exhausted' : stopReason === 'error' ? 'request_error'
+  : stopReason === 'length' ? 'output_limit' : hasText ? 'completed' : 'empty_response';
+ return { reason, stopReason, rawStopReason: message?.rawStopReason, errorMessage: safePreview(message?.errorMessage, 800),
+  usage: message?.usage, toolCount: runState?.toolCount || 0, toolErrors: runState?.toolErrors || 0, recoveryAttempts, compactionEvents: runState?.compactionEvents || 0 };
+}
 const dialogs = new Map();
 const historyLeaves = new Map();
 const historyKey = (history) => createHash('sha256').update(JSON.stringify(history)).digest('hex');
@@ -62,7 +102,7 @@ async function init(input) {
  sdk = await import(pathToFileURL(input.sdkPath).href);
  if (!sdk.ModelRuntime) throw new Error('当前 Pi SDK 版本过旧，请更新 pi CLI 后重试。');
  const settingsManager = sdk.SettingsManager.create(input.cwd, input.agentDir);
- cwd = input.cwd; agentDir = input.agentDir;
+ cwd = input.cwd; agentDir = input.agentDir; runtimeLogPath = input.logPath || '';
  sdk.initTheme(settingsManager.getTheme(), false);
  ({ theme: extensionTheme } = await import(pathToFileURL(join(dirname(input.sdkPath), 'modes', 'interactive', 'theme', 'theme.js')).href));
  const factories = ['createCodemodeExtension', 'createToolSearchExtension', 'createMcpExtension']
@@ -74,17 +114,28 @@ async function init(input) {
  });
  // Credentials arrive over the private stdin pipe, never through frontend state,
  // command-line arguments, or temporary files.
+ const model = {
+  ...input.model,
+  // Pi's cost calculator accesses model.cost.tiers after every response. Keep
+  // older profiles and hand-edited models usable when cost is absent/null.
+  cost: input.model?.cost && typeof input.model.cost === 'object' && !Array.isArray(input.model.cost)
+   ? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...input.model.cost }
+   : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: Number(input.model?.contextWindow) > 0 ? Number(input.model.contextWindow) : 256 * 1024,
+  maxTokens: Number(input.model?.maxTokens) > 0 ? Number(input.model.maxTokens) : 4096,
+  input: Array.isArray(input.model?.input) && input.model.input.length ? input.model.input : ['text'],
+ };
  modelRuntime.registerProvider(input.model.provider, {
-  api: input.model.api, baseUrl: input.model.baseUrl, apiKey: 'model-switcher-runtime',
-  headers: input.headers, models: [input.model],
+  api: model.api, baseUrl: model.baseUrl, apiKey: 'model-switcher-runtime',
+  headers: input.headers, models: [model],
  });
  await modelRuntime.setRuntimeApiKey(input.model.provider, input.apiKey || 'model-switcher-local');
  ({ session } = await sdk.createAgentSession({
   cwd: input.cwd, agentDir: input.agentDir, settingsManager, modelRuntime,
-  model: modelRuntime.getModel(input.model.provider, input.model.id),
+  model: modelRuntime.getModel(model.provider, model.id),
   resourceLoader: loader, sessionManager: sdk.SessionManager.inMemory(input.cwd),
  }));
- session.subscribe((event) => emit({ type: 'event', runID, event }));
+ session.subscribe((event) => { observeEvent(event); emit({ type: 'event', runID, event }); });
  await session.bindExtensions({
   mode: 'rpc', uiContext: createUI(),
   onError: (error) => emit({ type: 'notice', level: 'error', message: error.message }),
@@ -92,7 +143,7 @@ async function init(input) {
    waitForIdle: () => session.waitForIdle(), reload: async () => { await session.reload(); emit({ type: 'resources', info: resourceInfo() }); },
    ...Object.fromEntries(['newSession', 'fork', 'navigateTree', 'switchSession'].map((name) => [name, async () => { throw new Error('内置对话不支持 Pi CLI 历史会话操作，请使用新对话按钮或 pi CLI。'); }])),
   },
-  shutdownHandler: () => { cancelDialogs(); void session.abort(); emit({ type: 'notice', message: 'Pi extension requested shutdown.' }); },
+  shutdownHandler: () => { aborted = true; cancelDialogs(); void session.abort(); emit({ type: 'notice', message: 'Pi extension requested shutdown.' }); },
  });
  rememberHistory([]); rememberHistory();
  emit({ type: 'ready', info: resourceInfo() });
@@ -100,13 +151,25 @@ async function init(input) {
 function resourceInfo() {
  const extensions = loader.getExtensions();
  return {
-  cwd, agentDir,
+  cwd, agentDir, logPath: runtimeLogPath,
   skills: loader.getSkills().skills.map((skill) => ({ name: skill.name, path: skill.filePath })),
   extensions: extensions.extensions.map((extension) => extension.path),
   tools: session.getActiveToolNames(),
   diagnostics: [...extensions.errors.map((error) => `${error.path}: ${error.error}`),
    ...loader.getSkills().diagnostics.map((item) => item.message)],
  };
+}
+async function compactSession(reason, instructions) {
+ if (typeof session?.compact !== 'function') return false;
+ emitTrace('recovery', { runID, phase: 'compact', reason, attempt: 1, maxAttempts: 1 });
+ try {
+  await session.compact(instructions);
+  emitTrace('diagnostic', { runID, stage: 'compact_fallback_end', reason, success: true });
+  return true;
+ } catch (error) {
+  emitTrace('diagnostic', { runID, stage: 'compact_fallback_end', reason, success: false, errorMessage: safePreview(error?.message || String(error), 800) });
+  return false;
+ }
 }
 
 function syncHistory(history) {
@@ -147,10 +210,19 @@ function syncHistory(history) {
 
 async function run(input) {
  if (busy) throw new Error('上一条回复尚未结束');
- busy = true; runID = input.id;
+ busy = true; runID = input.id; aborted = false;
+ runState = { toolCount: 0, toolErrors: 0, terminated: false, lastAssistant: null, compactionEvents: 0 };
+ let recoveryAttempts = 0;
+ let compactionAttempted = false;
+ emitTrace('diagnostic', { runID, stage: 'run_start', model: session.model?.id, maxEmptyRecoveries: MAX_EMPTY_RECOVERIES });
  try {
   syncHistory(input.history);
   editorText = input.editorText || '';
+  const contextUsage = session.getContextUsage?.();
+  if (contextUsage?.percent >= 80 && typeof session.compact === 'function') {
+   await compactSession('pre_prompt', 'Summarize the existing conversation and preserve the current task state, completed work, tool results, errors, and next required action.');
+   compactionAttempted = true;
+  }
   const message = input.message;
   const text = message.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
   let disposition;
@@ -158,13 +230,31 @@ async function run(input) {
    await session.reload(); disposition = 'handled';
    emit({ type: 'resources', info: resourceInfo() });
    emit({ type: 'notice', message: '已重新加载 Pi 全局 skills 和 extensions。' });
-  } else await session.prompt(text, { images: message.content.filter((part) => part.type === 'image'), source: 'interactive', preflightResult: (value) => { disposition = value; } });
+  } else await session.prompt(text, { images: message.content.filter((part) => part.type === 'image'), source: 'interactive', preflightResult: (value) => { disposition = value === true ? 'handled' : value; } });
+  while ((!['handled'].includes(disposition) || runState.toolCount > 0) && !aborted && !shuttingDown && !runState.terminated && runState.toolCount && recoveryAttempts < MAX_EMPTY_RECOVERIES) {
+   const last = runState.lastAssistant;
+   if (!last || last.stopReason === 'aborted' || last.content?.some((part) => part.type === 'text' && part.text?.trim())) break;
+   if (last.stopReason === 'length' && !compactionAttempted && !runState.compactionEvents && typeof session.compact === 'function') {
+    compactionAttempted = true;
+    await compactSession('recovery', 'Summarize the completed work and preserve the current task state, tool results, errors, and next required action.');
+   }
+   recoveryAttempts++;
+   emitTrace('recovery', { runID, attempt: recoveryAttempts, maxAttempts: MAX_EMPTY_RECOVERIES, stopReason: last.stopReason });
+   // Ask for a fresh decision with the existing transcript. Never replay a
+   // failed tool command or discard earlier successful side effects.
+   await session.prompt('The previous response ended after tool use without a final answer. Review the original user task and the existing tool results. Check the current state before repeating any action. If the task is incomplete and a recoverable tool error occurred, correct the arguments or choose another approach and continue within the user-authorized scope. Do not blindly repeat actions with side effects or bypass permissions. If finished or blocked, give a clear final answer explaining the result or the blocker.', { source: 'interactive', expandPromptTemplates: false });
+  }
   rememberHistory();
-  emit({ type: 'done', runID, disposition, messages: session.messages });
+  const handled = disposition === 'handled' && runState.toolCount === 0;
+  const outcome = handled ? { reason: 'handled', recoveryAttempts } : runOutcome(recoveryAttempts);
+  emitTrace('diagnostic', { runID, stage: 'run_end', ...outcome });
+  emit({ type: 'done', runID, disposition: handled ? 'handled' : undefined, outcome, messages: session.messages });
  } catch (error) {
   rememberHistory();
-  emit({ type: 'failed', runID, message: error.message || String(error), messages: session.messages });
- } finally { busy = false; runID = ''; }
+  const outcome = { ...runOutcome(recoveryAttempts), reason: aborted ? 'aborted' : 'runtime_error' };
+  emitTrace('diagnostic', { runID, stage: 'run_end', ...outcome });
+  emit({ type: 'failed', runID, message: error.message || String(error), outcome, messages: session.messages });
+ } finally { busy = false; runID = ''; runState = null; }
 }
 
 let initialized = false;
@@ -173,7 +263,7 @@ async function command(input) {
  if (input.type === 'ui_response') { dialogs.get(input.id)?.(input.value); return; }
  if (!initialized) throw new Error('Pi runtime is not ready');
  if (input.type === 'run') { void run(input).catch((error) => emit({ type: 'failed', runID: input.id, message: error.message })); return; }
- if (input.type === 'abort') { cancelDialogs(); await session.abort(); return; }
+ if (input.type === 'abort') { aborted = true; cancelDialogs(); await session.abort(); return; }
  if (input.type === 'editor_state') { editorText = input.text || ''; return; }
  if (input.type === 'dispose') { await shutdown(); return; }
  throw new Error('Unsupported Pi runtime command');
@@ -181,6 +271,7 @@ async function command(input) {
 async function shutdown() {
  if (shuttingDown) return;
  shuttingDown = true;
+ aborted = true;
  cancelDialogs();
  if (session) {
   await session.abort();

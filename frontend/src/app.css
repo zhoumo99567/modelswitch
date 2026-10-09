@@ -187,8 +187,14 @@ input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: #08
 .model-capability small { font-size: 11px; line-height: 1.7; }
 .model-list { display: grid; gap: 5px; margin-top: 22px; }
 .model-capability + .model-list { margin-top: 0; }
+.model-selection-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(150px, .65fr); gap: 14px; }
+.context-window-input { display: flex; align-items: center; gap: 8px; }
+.context-window-input input { min-width: 0; flex: 1; }
+.context-window-input span { color: var(--muted); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-selection-grid small { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .model-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 11px 12px; color: var(--secondary); border: 1px solid transparent; border-radius: 7px; font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .model-row > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-row .model-context { flex-shrink: 0; color: var(--muted); font-size: 10px; }
 .model-row.chosen { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
 .model-empty { display: grid; justify-items: center; gap: 14px; padding: 34px 16px; border: 1px dashed var(--border); border-radius: 8px; color: var(--secondary); text-align: center; font-size: 12px; line-height: 1.7; }
 .model-empty > svg { color: var(--accent); }
